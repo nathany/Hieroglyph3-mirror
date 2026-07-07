@@ -1,5 +1,12 @@
 packages/
 *.tmp
+#Ignore build output
+.vs/
+x64/
+Library/
+Applications/Bin/
+Source/Bin/
+Dependencies/lua-5.1.4/LuaLib/Bin/
 #Ignore Visual studio files
 *.sdf
 *.suo
