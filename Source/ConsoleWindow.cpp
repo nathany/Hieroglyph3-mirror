@@ -382,7 +382,7 @@ void ConsoleWindow::Init( HINSTANCE hInstance )
     SetFocus( m_hEditControl );
 	m_ScrollyPos = 0;
 
-	lpfnInputEdit = (WNDPROC)SetWindowLongPtr( m_hEditControl, GWLP_WNDPROC, (long) SubclassInputEditProc ); 
+	lpfnInputEdit = (WNDPROC)SetWindowLongPtr( m_hEditControl, GWLP_WNDPROC, (LONG_PTR) SubclassInputEditProc );
 	g_Console->ResizeControls();
 
 
