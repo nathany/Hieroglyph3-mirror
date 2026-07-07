@@ -68,6 +68,7 @@ ViewSimulation::ViewSimulation( RendererDX11& Renderer, int SizeX, int SizeY )
 
 	WaterState[0] = Renderer.CreateStructuredBuffer( &config, &InitialData );
 	WaterState[1] = Renderer.CreateStructuredBuffer( &config, &InitialData );
+	m_CurrentState = 0;
 
 	// Release the system memory since the simulation state is now going to be
 	// managed by the GPU.
@@ -115,20 +116,19 @@ void ViewSimulation::ExecuteTask( PipelineManagerDX11* pPipelineManager, IParame
 	pPipelineManager->ClearPipelineResources();
 	pPipelineManager->ApplyPipelineResources();
 
-	// Switch the two resources so that the current state is maintained in slot 0.
-	ResourcePtr TempState = WaterState[0];
-	WaterState[0] = WaterState[1];
-	WaterState[1] = TempState;
+	// Flip which resource is considered the current state.  The shared_ptrs in
+	// WaterState are intentionally left untouched - see the note in the header.
+	m_CurrentState = 1 - m_CurrentState;
 }
 //--------------------------------------------------------------------------------
 void ViewSimulation::SetRenderParams( IParameterManager* pParamManager )
 {
 	// Set the parameters for this view to be able to perform its processing
-	// sequence.  In this case, water state '0' is always considered the current
-	// state.
+	// sequence.  The current state is read, and the new state is written.
 
-	pParamManager->SetShaderResourceParameter( m_pCurrentWaterState, WaterState[0] );
-	pParamManager->SetUnorderedAccessParameter( m_pNewWaterState, WaterState[1] );
+	int current = m_CurrentState;
+	pParamManager->SetShaderResourceParameter( m_pCurrentWaterState, WaterState[current] );
+	pParamManager->SetUnorderedAccessParameter( m_pNewWaterState, WaterState[1 - current] );
 }
 //--------------------------------------------------------------------------------
 void ViewSimulation::SetUsageParams( IParameterManager* pParamManager )
@@ -138,7 +138,7 @@ void ViewSimulation::SetUsageParams( IParameterManager* pParamManager )
 
 	Vector4f DispatchSize = Vector4f( 16.0f, 16.0f, 16.0f * 16.0f, 16.0f * 16.0f );
 
-	pParamManager->SetShaderResourceParameter( m_pCurrentWaterState, WaterState[0] );
+	pParamManager->SetShaderResourceParameter( m_pCurrentWaterState, WaterState[m_CurrentState] );
 	pParamManager->SetVectorParameter( m_pDispatchSize, &DispatchSize );
 }
 //--------------------------------------------------------------------------------

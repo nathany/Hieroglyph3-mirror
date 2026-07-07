@@ -19,6 +19,7 @@
 #include "UnorderedAccessParameterDX11.h"
 #include "ShaderResourceParameterDX11.h"
 #include "VectorParameterDX11.h"
+#include <atomic>
 //--------------------------------------------------------------------------------
 namespace Glyph3
 {
@@ -50,7 +51,12 @@ namespace Glyph3
 		int ThreadGroupsX;
 		int ThreadGroupsY;
 
+		// The two water state buffers are created once and never reassigned.  The
+		// current state is indicated by m_CurrentState, which is flipped after each
+		// simulation dispatch.  Reassigning the shared_ptrs themselves is not safe,
+		// since other threads copy them concurrently while setting render parameters.
 		ResourcePtr WaterState[2];
+		std::atomic<int> m_CurrentState;
 		RenderEffectDX11*	pWaterEffect;
 
 		ShaderResourceParameterDX11* m_pCurrentWaterState;
