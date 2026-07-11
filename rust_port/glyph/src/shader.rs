@@ -8,8 +8,8 @@
 //!   any transpose while the book's row-vector `mul(v, M)` shaders work
 //!   unchanged: HLSL reads glam's columns as rows, i.e. the transpose, which
 //!   is exactly the row-vector form.
-//! - Shaders are found on disk at runtime (the engine's `FileSystem` looks in
-//!   `Data/Shaders/`; here it's `data/shaders/` under `rust_port/`).
+//! - Shaders are found on disk at runtime, straight from the repository's
+//!   `Applications/Data/Shaders/` — the same files the C++ demos compile.
 
 use windows::Win32::Graphics::Direct3D::Fxc::{
     D3DCOMPILE_DEBUG, D3DCOMPILE_PACK_MATRIX_ROW_MAJOR, D3DCOMPILE_SKIP_OPTIMIZATION, D3DCompile,
@@ -19,11 +19,11 @@ use windows::core::{Error, HRESULT, PCSTR, Result};
 
 use crate::paths::find_data_file;
 
-/// Compile `entry` from `data/shaders/<filename>` for the given target
-/// (e.g. `"vs_4_0"`), returning the bytecode. Compile errors are returned in
-/// the `Error` message (the C++ logs them and asserts).
+/// Compile `entry` from `Applications/Data/Shaders/<filename>` for the given
+/// target (e.g. `"vs_4_0"`), returning the bytecode. Compile errors are
+/// returned in the `Error` message (the C++ logs them and asserts).
 pub fn compile_shader(filename: &str, entry: &str, target: &str) -> Result<Vec<u8>> {
-    let path = find_data_file("shaders", filename).ok_or_else(|| {
+    let path = find_data_file("Shaders", filename).ok_or_else(|| {
         Error::new(HRESULT(-1), format!("shader source not found: {filename}"))
     })?;
     let source = std::fs::read(&path)

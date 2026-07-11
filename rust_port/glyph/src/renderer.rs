@@ -223,8 +223,9 @@ impl Renderer {
     }
 
     /// Mirrors `RendererDX11::LoadTexture` (which uses DirectXTK's
-    /// WICTextureLoader): load `data/textures/<filename>` into an immutable
-    /// RGBA8 texture and create a default shader resource view for it.
+    /// WICTextureLoader): load `Applications/Data/Textures/<filename>` into
+    /// an immutable RGBA8 texture and create a default shader resource view
+    /// for it.
     ///
     /// Like WICTextureLoader's default flags, the texture gets the `_SRGB`
     /// format when the PNG declares sRGB gamma (an `sRGB` chunk, or `gAMA`
@@ -235,7 +236,7 @@ impl Renderer {
         &self,
         filename: &str,
     ) -> Result<(ID3D11Texture2D, ID3D11ShaderResourceView)> {
-        let path = crate::paths::find_data_file("textures", filename).ok_or_else(|| {
+        let path = crate::paths::find_data_file("Textures", filename).ok_or_else(|| {
             Error::new(HRESULT(-1), format!("texture not found: {filename}"))
         })?;
         let bytes = std::fs::read(&path)

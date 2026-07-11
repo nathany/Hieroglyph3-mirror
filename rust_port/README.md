@@ -17,16 +17,18 @@ rust_port/
 │       ├── renderer.rs   #   device/swap chain/depth/textures/screenshot (≈ RendererDX11 subset)
 │       ├── shader.rs     #   runtime HLSL compilation (≈ ShaderFactoryDX11)
 │       └── paths.rs      #   data-file lookup (≈ FileSystem)
-├── apps/                 # one binary crate per sample application
-└── data/
-    ├── shaders/          # copied unchanged from ../Applications/Data/Shaders
-    └── textures/         # copied from ../Applications/Data/Textures
+└── apps/                 # one binary crate per sample application
 ```
 
 The `glyph` crate is deliberately **not** an engine port — it holds only the
 support code the samples share, mirroring the behavior of the corresponding
 engine classes (each module's docs name its C++ counterpart) without the
 abstraction layers (`ResourceProxy`, `ParameterManager`, events, scene graph).
+
+Shaders and textures are loaded directly from the repository's
+`../Applications/Data/` tree — the same files the C++ demos use, unchanged
+and uncopied. `glyph::paths::find_data_file` resolves them whether an app is
+run via `cargo run` from `rust_port/` or as a bare executable.
 
 ## Build & run
 
@@ -70,7 +72,7 @@ the C++, where nothing consumes the resize event in this sample.
 
 The book's first real render (640×480): an indexed color cube spun by a world
 matrix rebuilt each frame, drawn VS → GS → PS with
-[data/shaders/RotatingCube.hlsl](data/shaders/RotatingCube.hlsl) unchanged.
+[RotatingCube.hlsl](../Applications/Data/Shaders/RotatingCube.hlsl) unchanged.
 The geometry shader — not the vertex shader — applies `WorldViewProjMatrix`
 and "blows up" each face along its normal, so the cbuffer binds to the GS
 stage only. Matrix handling is the guide's recommended setup: shaders compiled
