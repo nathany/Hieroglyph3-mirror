@@ -10,12 +10,15 @@ verified side by side against the VS2022 builds in `../Applications/Bin`.
 
 ```
 rust_port/
-├── Cargo.toml          # workspace; shared deps in [workspace.dependencies]
-├── glyph/              # support library — grows only as samples need it
-│   └── src/window.rs   #   Win32 window wrappers (≈ Win32RenderWindow, Win32Window)
-├── apps/
-│   └── basic_window/   # one binary crate per sample application
-└── data/               # shaders/textures copied from ../Applications/Data (as needed)
+├── Cargo.toml            # workspace; shared deps in [workspace.dependencies]
+├── glyph/                # support library — grows only as samples need it
+│   └── src/
+│       ├── window.rs     #   Win32 window wrappers (≈ Win32RenderWindow, Win32Window)
+│       ├── renderer.rs   #   device/swap chain/depth/screenshot (≈ RendererDX11 subset)
+│       └── shader.rs     #   runtime HLSL compilation (≈ ShaderFactoryDX11)
+├── apps/                 # one binary crate per sample application
+└── data/
+    └── shaders/          # copied unchanged from ../Applications/Data/Shaders
 ```
 
 The `glyph` crate is deliberately **not** an engine port — it holds only the
@@ -35,6 +38,7 @@ cargo run -p basic_window
 |---|---|---|---|
 | `basic_window` | Applications/BasicWindow | 1 | ✅ matches C++ behavior |
 | `basic_application` | Applications/BasicApplication | 1 | ✅ matches C++ behavior |
+| `rotating_cube` | Applications/RotatingCube | 3 | ✅ matches C++ behavior |
 
 ### basic_window
 
@@ -58,3 +62,19 @@ standing in for DirectXTK's `SaveWICTextureToFile`. Device creation mirrors
 the engine's defaults (`R8G8B8A8_UNORM_SRGB`, 2 buffers, `DISCARD`); depth is
 `D32_FLOAT`. Resizing the window does not resize the swap chain — faithful to
 the C++, where nothing consumes the resize event in this sample.
+
+### rotating_cube
+
+The book's first real render (640×480): an indexed color cube spun by a world
+matrix rebuilt each frame, drawn VS → GS → PS with
+[data/shaders/RotatingCube.hlsl](data/shaders/RotatingCube.hlsl) unchanged.
+The geometry shader — not the vertex shader — applies `WorldViewProjMatrix`
+and "blows up" each face along its normal, so the cbuffer binds to the GS
+stage only. Matrix handling is the guide's recommended setup: shaders compiled
+with `D3DCOMPILE_PACK_MATRIX_ROW_MAJOR` (as the engine's `ShaderFactoryDX11`
+does), glam composing naturally (`proj * view * world`), zero transposes.
+`camera::lh::proj::directx::perspective` / `camera::lh::view::look_at_mat4`
+stand in for `XMMatrixPerspectiveFovLH` / `XMMatrixLookAtLH`. The window and
+screenshot prefix say "BasicApplication" because the C++ `GetName()` does —
+a copy-paste quirk in the original, preserved. Verified side-by-side against
+`Applications/Bin/RotatingCube_Desktop.exe` screenshots.

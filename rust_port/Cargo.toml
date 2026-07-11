@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["glyph", "apps/basic_window", "apps/basic_application"]
+members = ["glyph", "apps/basic_window", "apps/basic_application", "apps/rotating_cube"]
 
 [workspace.package]
 edition = "2024"
@@ -8,6 +8,7 @@ license = "MIT"
 
 [workspace.dependencies]
 glyph = { path = "glyph" }
+glam = "0.33"
 image = "0.25"
 
 [workspace.dependencies.windows]
@@ -18,6 +19,7 @@ features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_Graphics_Gdi",
     "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D_Fxc",
     "Win32_Graphics_Direct3D11",
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Dxgi_Common",

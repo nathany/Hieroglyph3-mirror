@@ -13,12 +13,13 @@
 
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::{BLACK_BRUSH, GetStockObject, HBRUSH, UpdateWindow};
+use windows::Win32::UI::Input::KeyboardAndMouse::{VK_ESCAPE, VK_SPACE};
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRectEx, CS_HREDRAW, CS_VREDRAW, CreateWindowExW, DefWindowProcW, DestroyWindow,
     GWL_EXSTYLE, GWL_STYLE, GetClientRect, GetWindowLongPtrW, GetWindowRect, IDC_ARROW,
-    IDI_APPLICATION, LoadCursorW, LoadIconW, MoveWindow, RegisterClassExW, SW_SHOWNORMAL,
-    SetWindowLongPtrW, ShowWindow, WINDOW_EX_STYLE, WINDOW_LONG_PTR_INDEX, WINDOW_STYLE,
-    WNDCLASSEXW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    IDI_APPLICATION, LoadCursorW, LoadIconW, MoveWindow, PostQuitMessage, RegisterClassExW,
+    SW_SHOWNORMAL, SetWindowLongPtrW, ShowWindow, WINDOW_EX_STYLE, WINDOW_LONG_PTR_INDEX,
+    WINDOW_STYLE, WM_DESTROY, WM_KEYUP, WNDCLASSEXW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 use windows::core::{HSTRING, w};
 
@@ -36,6 +37,47 @@ pub trait WindowProc {
     /// (mirrors `IWindowProc::BeforeRegisterWindowClass`).
     fn before_register_window_class(&mut self, wc: &mut WNDCLASSEXW) {
         let _ = wc;
+    }
+}
+
+/// The message handling the C++ `Application` framework gives every sample
+/// (`Application::WindowProc` + `Application::HandleEvent`, reduced to the
+/// parts these samples exercise): quit on window destruction or `Esc`
+/// key-up, request a screenshot on `Space` key-up. The app's main loop checks
+/// and clears [`save_screenshot`](Self::save_screenshot) each frame
+/// (mirroring `Application::TakeScreenShot`).
+#[derive(Default)]
+pub struct AppMessageHandler {
+    pub save_screenshot: bool,
+}
+
+impl WindowProc for AppMessageHandler {
+    fn window_proc(&mut self, hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        match msg {
+            WM_DESTROY => {
+                // SAFETY: Trivially safe to call from the thread that owns the
+                // window; only marked unsafe as an FFI function.
+                unsafe { PostQuitMessage(0) };
+                return LRESULT(0);
+            }
+
+            WM_KEYUP => {
+                if wparam.0 == VK_ESCAPE.0 as usize {
+                    // SAFETY: As above.
+                    unsafe { PostQuitMessage(0) };
+                    return LRESULT(0);
+                } else if wparam.0 == VK_SPACE.0 as usize {
+                    self.save_screenshot = true;
+                    return LRESULT(0);
+                }
+            }
+
+            _ => {}
+        }
+
+        // SAFETY: Forwarding a message to the default handler with the exact
+        // arguments Win32 passed in is always valid.
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
     }
 }
 

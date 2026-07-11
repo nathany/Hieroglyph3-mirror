@@ -6,4 +6,6 @@
 //! the corresponding engine classes (referenced in each module's docs) without
 //! their abstraction layers.
 
+pub mod renderer;
+pub mod shader;
 pub mod window;

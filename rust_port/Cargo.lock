@@ -347,9 +347,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "glam"
+version = "0.33.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f22fb22f065b308be0d8724e3706c7fa3fc2a6c7d6899df4cad7860e7a75436"
+
+[[package]]
 name = "glyph"
 version = "0.1.0"
 dependencies = [
+ "image",
  "windows",
 ]
 
@@ -855,6 +862,15 @@ name = "rgb"
 version = "0.8.53"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
+
+[[package]]
+name = "rotating_cube"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "glyph",
+ "windows",
+]
 
 [[package]]
 name = "rustversion"

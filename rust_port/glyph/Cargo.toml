@@ -7,3 +7,4 @@ description = "Shared support code for the Rust ports of the Hieroglyph3 book sa
 
 [dependencies]
 windows.workspace = true
+image.workspace = true
