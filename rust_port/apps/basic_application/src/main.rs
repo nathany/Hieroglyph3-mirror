@@ -22,6 +22,7 @@ use std::time::Instant;
 
 use glyph::renderer::Renderer;
 use glyph::window::{AppMessageHandler, RenderWindow};
+use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_10_0;
 use windows::Win32::Graphics::Direct3D11::D3D11_CLEAR_DEPTH;
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, MB_ICONEXCLAMATION, MB_SYSTEMMODAL, MSG, MessageBoxW, PM_REMOVE,
@@ -41,7 +42,7 @@ fn main() {
     window.set_caption("BasicApplication");
     window.initialize(&mut handler);
 
-    let renderer = match Renderer::new(window.handle(), WIDTH, HEIGHT) {
+    let renderer = match Renderer::new(window.handle(), WIDTH, HEIGHT, D3D_FEATURE_LEVEL_10_0) {
         Ok(r) => r,
         Err(_) => {
             // Mirrors the C++ failure path: hide the window, tell the user,

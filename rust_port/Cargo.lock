@@ -123,6 +123,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "basic_compute_shader"
+version = "0.1.0"
+dependencies = [
+ "glyph",
+ "windows",
+]
+
+[[package]]
 name = "basic_window"
 version = "0.1.0"
 dependencies = [

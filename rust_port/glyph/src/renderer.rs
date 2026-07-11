@@ -4,38 +4,73 @@
 
 use windows::Win32::Foundation::{HMODULE, HWND};
 use windows::Win32::Graphics::Direct3D::{
-    D3D_DRIVER_TYPE_REFERENCE, D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL_10_0,
+    D3D_DRIVER_TYPE_REFERENCE, D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL,
 };
 use windows::Win32::Graphics::Direct3D11::{
-    D3D11_BIND_DEPTH_STENCIL, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_DEBUG,
-    D3D11_CREATE_DEVICE_FLAG, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_SDK_VERSION,
-    D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING, D3D11_VIEWPORT,
+    D3D11_BIND_DEPTH_STENCIL, D3D11_BIND_SHADER_RESOURCE, D3D11_CPU_ACCESS_READ,
+    D3D11_CREATE_DEVICE_DEBUG, D3D11_CREATE_DEVICE_FLAG, D3D11_MAP_READ,
+    D3D11_MAPPED_SUBRESOURCE, D3D11_SDK_VERSION, D3D11_SUBRESOURCE_DATA, D3D11_TEXTURE2D_DESC,
+    D3D11_USAGE_DEFAULT, D3D11_USAGE_IMMUTABLE, D3D11_USAGE_STAGING, D3D11_VIEWPORT,
     D3D11CreateDevice, ID3D11DepthStencilView, ID3D11Device, ID3D11DeviceContext,
-    ID3D11RenderTargetView, ID3D11Texture2D,
+    ID3D11RenderTargetView, ID3D11ShaderResourceView, ID3D11Texture2D,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT_D32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_MODE_DESC,
-    DXGI_MODE_SCALING_UNSPECIFIED, DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL,
-    DXGI_SAMPLE_DESC,
+    DXGI_FORMAT_D32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+    DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED, DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
+    DXGI_RATIONAL, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
     CreateDXGIFactory1, DXGI_PRESENT, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter1, IDXGIFactory1, IDXGISwapChain,
 };
-use windows::core::Result;
+use windows::core::{Error, HRESULT, Result};
+
+/// Scan a PNG's chunks (before the image data) for sRGB gamma metadata: an
+/// `sRGB` chunk, or a `gAMA` chunk with the sRGB value 45455 (1/2.2 in PNG's
+/// fixed-point encoding). This is the signal WIC/DirectXTK use to pick an
+/// `_SRGB` texture format.
+fn png_declares_srgb(bytes: &[u8]) -> bool {
+    // Skip the 8-byte PNG signature, then walk [len][type][data][crc] chunks.
+    let mut pos = 8;
+    while pos + 8 <= bytes.len() {
+        let len = u32::from_be_bytes([bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]])
+            as usize;
+        let chunk_type = &bytes[pos + 4..pos + 8];
+        match chunk_type {
+            b"sRGB" => return true,
+            b"gAMA" if len == 4 && pos + 12 <= bytes.len() => {
+                let gamma = u32::from_be_bytes([
+                    bytes[pos + 8],
+                    bytes[pos + 9],
+                    bytes[pos + 10],
+                    bytes[pos + 11],
+                ]);
+                if gamma == 45455 {
+                    return true;
+                }
+            }
+            b"IDAT" => return false,
+            _ => {}
+        }
+        pos += 12 + len;
+    }
+    false
+}
 
 /// Mirrors `RendererDX11::Initialize`: enumerate hardware adapters and create
-/// a device at exactly `D3D_FEATURE_LEVEL_10_0` on the first one that
-/// succeeds, falling back to the reference driver (which is unavailable on
-/// most modern systems, matching the C++'s failure path). Debug layer in
-/// debug builds.
-pub fn create_device() -> Result<(ID3D11Device, ID3D11DeviceContext)> {
+/// a device at exactly the requested feature level (the samples pass 10.0 or
+/// 11.0, matching their C++ counterparts) on the first adapter that succeeds,
+/// falling back to the reference driver (which is unavailable on most modern
+/// systems, matching the C++'s failure path). Debug layer in debug builds.
+pub fn create_device(
+    feature_level: D3D_FEATURE_LEVEL,
+) -> Result<(ID3D11Device, ID3D11DeviceContext)> {
     let flags = if cfg!(debug_assertions) {
         D3D11_CREATE_DEVICE_DEBUG
     } else {
         D3D11_CREATE_DEVICE_FLAG(0)
     };
-    let levels = [D3D_FEATURE_LEVEL_10_0];
+    let levels = [feature_level];
 
     let mut device: Option<ID3D11Device> = None;
     let mut context: Option<ID3D11DeviceContext> = None;
@@ -103,8 +138,13 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(hwnd: HWND, width: u32, height: u32) -> Result<Self> {
-        let (device, context) = create_device()?;
+    pub fn new(
+        hwnd: HWND,
+        width: u32,
+        height: u32,
+        feature_level: D3D_FEATURE_LEVEL,
+    ) -> Result<Self> {
+        let (device, context) = create_device(feature_level)?;
 
         let desc = DXGI_SWAP_CHAIN_DESC {
             BufferDesc: DXGI_MODE_DESC {
@@ -179,6 +219,68 @@ impl Renderer {
         // (e.g. device removed) are ignored here as in the C++.
         unsafe {
             let _ = self.swap_chain.Present(0, DXGI_PRESENT(0));
+        }
+    }
+
+    /// Mirrors `RendererDX11::LoadTexture` (which uses DirectXTK's
+    /// WICTextureLoader): load `data/textures/<filename>` into an immutable
+    /// RGBA8 texture and create a default shader resource view for it.
+    ///
+    /// Like WICTextureLoader's default flags, the texture gets the `_SRGB`
+    /// format when the PNG declares sRGB gamma (an `sRGB` chunk, or `gAMA`
+    /// 1/2.2) — this matters: it decides whether shader `Load`/`Sample`
+    /// returns raw or linearized values, and the book's data files carry the
+    /// metadata.
+    pub fn load_texture_png(
+        &self,
+        filename: &str,
+    ) -> Result<(ID3D11Texture2D, ID3D11ShaderResourceView)> {
+        let path = crate::paths::find_data_file("textures", filename).ok_or_else(|| {
+            Error::new(HRESULT(-1), format!("texture not found: {filename}"))
+        })?;
+        let bytes = std::fs::read(&path)
+            .map_err(|e| Error::new(HRESULT(-1), format!("failed to read {path:?}: {e}")))?;
+        let image = image::load_from_memory(&bytes)
+            .map_err(|e| Error::new(HRESULT(-1), format!("failed to load {path:?}: {e}")))?
+            .to_rgba8();
+        let (width, height) = image.dimensions();
+
+        let format = if png_declares_srgb(&bytes) {
+            DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
+        } else {
+            DXGI_FORMAT_R8G8B8A8_UNORM
+        };
+
+        let desc = D3D11_TEXTURE2D_DESC {
+            Width: width,
+            Height: height,
+            MipLevels: 1,
+            ArraySize: 1,
+            Format: format,
+            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+            Usage: D3D11_USAGE_IMMUTABLE,
+            BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
+            CPUAccessFlags: 0,
+            MiscFlags: 0,
+        };
+        let data = D3D11_SUBRESOURCE_DATA {
+            pSysMem: image.as_raw().as_ptr() as *const _,
+            SysMemPitch: width * 4,
+            SysMemSlicePitch: 0,
+        };
+
+        // SAFETY: The descriptor matches the RGBA8 pixel buffer (pitch
+        // width*4), which stays alive across the creation calls; out-params
+        // are valid.
+        unsafe {
+            let mut texture: Option<ID3D11Texture2D> = None;
+            self.device.CreateTexture2D(&desc, Some(&data), Some(&mut texture))?;
+            let texture = texture.unwrap();
+
+            let mut srv: Option<ID3D11ShaderResourceView> = None;
+            self.device.CreateShaderResourceView(&texture, None, Some(&mut srv))?;
+
+            Ok((texture, srv.unwrap()))
         }
     }
 

@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["glyph", "apps/basic_window", "apps/basic_application", "apps/rotating_cube"]
+members = [
+    "glyph",
+    "apps/basic_window",
+    "apps/basic_application",
+    "apps/rotating_cube",
+    "apps/basic_compute_shader",
+]
 
 [workspace.package]
 edition = "2024"

@@ -34,7 +34,9 @@ use glam::{Mat4, Vec3};
 use glyph::renderer::Renderer;
 use glyph::shader::compile_shader;
 use glyph::window::{AppMessageHandler, RenderWindow};
-use windows::Win32::Graphics::Direct3D::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+use windows::Win32::Graphics::Direct3D::{
+    D3D_FEATURE_LEVEL_10_0, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
+};
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_INDEX_BUFFER, D3D11_BIND_VERTEX_BUFFER,
     D3D11_BLEND_DESC, D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_ZERO, D3D11_BUFFER_DESC,
@@ -301,7 +303,7 @@ fn main() {
     window.set_caption("BasicApplication");
     window.initialize(&mut handler);
 
-    let renderer = match Renderer::new(window.handle(), WIDTH, HEIGHT) {
+    let renderer = match Renderer::new(window.handle(), WIDTH, HEIGHT, D3D_FEATURE_LEVEL_10_0) {
         Ok(r) => r,
         Err(_) => {
             // SAFETY: The window handle is live; MessageBoxW with constant

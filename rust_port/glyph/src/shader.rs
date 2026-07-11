@@ -11,39 +11,19 @@
 //! - Shaders are found on disk at runtime (the engine's `FileSystem` looks in
 //!   `Data/Shaders/`; here it's `data/shaders/` under `rust_port/`).
 
-use std::path::PathBuf;
-
 use windows::Win32::Graphics::Direct3D::Fxc::{
     D3DCOMPILE_DEBUG, D3DCOMPILE_PACK_MATRIX_ROW_MAJOR, D3DCOMPILE_SKIP_OPTIMIZATION, D3DCompile,
 };
 use windows::Win32::Graphics::Direct3D::ID3DBlob;
 use windows::core::{Error, HRESULT, PCSTR, Result};
 
-/// Locate a shader source file: try `data/shaders/<name>` relative to the
-/// working directory (the case when running via `cargo run` from
-/// `rust_port/`), then relative to the executable's directory and its
-/// grandparent (`target/debug/` → `rust_port/`).
-fn find_shader(filename: &str) -> Option<PathBuf> {
-    let rel = PathBuf::from("data/shaders").join(filename);
-    if rel.exists() {
-        return Some(rel);
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        for ancestor in exe.ancestors().skip(1).take(4) {
-            let candidate = ancestor.join("data/shaders").join(filename);
-            if candidate.exists() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
-}
+use crate::paths::find_data_file;
 
 /// Compile `entry` from `data/shaders/<filename>` for the given target
 /// (e.g. `"vs_4_0"`), returning the bytecode. Compile errors are returned in
 /// the `Error` message (the C++ logs them and asserts).
 pub fn compile_shader(filename: &str, entry: &str, target: &str) -> Result<Vec<u8>> {
-    let path = find_shader(filename).ok_or_else(|| {
+    let path = find_data_file("shaders", filename).ok_or_else(|| {
         Error::new(HRESULT(-1), format!("shader source not found: {filename}"))
     })?;
     let source = std::fs::read(&path)

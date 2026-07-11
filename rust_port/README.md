@@ -14,11 +14,13 @@ rust_port/
 ├── glyph/                # support library — grows only as samples need it
 │   └── src/
 │       ├── window.rs     #   Win32 window wrappers (≈ Win32RenderWindow, Win32Window)
-│       ├── renderer.rs   #   device/swap chain/depth/screenshot (≈ RendererDX11 subset)
-│       └── shader.rs     #   runtime HLSL compilation (≈ ShaderFactoryDX11)
+│       ├── renderer.rs   #   device/swap chain/depth/textures/screenshot (≈ RendererDX11 subset)
+│       ├── shader.rs     #   runtime HLSL compilation (≈ ShaderFactoryDX11)
+│       └── paths.rs      #   data-file lookup (≈ FileSystem)
 ├── apps/                 # one binary crate per sample application
 └── data/
-    └── shaders/          # copied unchanged from ../Applications/Data/Shaders
+    ├── shaders/          # copied unchanged from ../Applications/Data/Shaders
+    └── textures/         # copied from ../Applications/Data/Textures
 ```
 
 The `glyph` crate is deliberately **not** an engine port — it holds only the
@@ -39,6 +41,7 @@ cargo run -p basic_window
 | `basic_window` | Applications/BasicWindow | 1 | ✅ matches C++ behavior |
 | `basic_application` | Applications/BasicApplication | 1 | ✅ matches C++ behavior |
 | `rotating_cube` | Applications/RotatingCube | 3 | ✅ matches C++ behavior |
+| `basic_compute_shader` | Applications/BasicComputeShader | 5 | ✅ pixel-identical to C++ |
 
 ### basic_window
 
@@ -78,3 +81,17 @@ stand in for `XMMatrixPerspectiveFovLH` / `XMMatrixLookAtLH`. The window and
 screenshot prefix say "BasicApplication" because the C++ `GetName()` does —
 a copy-paste quirk in the original, preserved. Verified side-by-side against
 `Applications/Bin/RotatingCube_Desktop.exe` screenshots.
+
+### basic_compute_shader
+
+The book's first compute pipeline (640×480, feature level 11.0 for `cs_5_0`).
+Each frame: `InvertColorCS.hlsl` reads `Outcrop.png` (SRV t0) and writes the
+inverted image to a `R16G16B16A16_FLOAT` texture (UAV u0) in 20×20 thread
+groups dispatched 32×24; the CS bindings are then cleared (the C++'s
+`ClearPipelineResources`) so a fullscreen quad can `Load` the result in the
+pixel shader. Texture loading mirrors WICTextureLoader's sRGB handling: the
+input texture gets an `_SRGB` format because `Outcrop.png` carries sRGB/gAMA
+metadata — without this the output is uniformly wrong by a gamma curve.
+Screenshots verified **pixel-identical** (max channel diff 0) against
+`Applications/Bin/BasicComputeShader_Desktop.exe`, which is possible here
+because the output is static.
