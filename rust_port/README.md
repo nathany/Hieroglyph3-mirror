@@ -38,6 +38,11 @@ cargo run -p basic_window
 
 ## Applications
 
+Text rendering (sprite fonts / overlays) is permanently out of scope for
+these ports — demos that show text render everything else.
+
+### Ported
+
 | App | C++ original | Book chapter | Status |
 |---|---|---|---|
 | `basic_window` | Applications/BasicWindow | 1 | ✅ matches C++ behavior |
@@ -45,6 +50,38 @@ cargo run -p basic_window
 | `rotating_cube` | Applications/RotatingCube | 3 | ✅ matches C++ behavior |
 | `basic_compute_shader` | Applications/BasicComputeShader | 5 | ✅ pixel-identical to C++ |
 | `immediate_renderer` | Applications/ImmediateRenderer | 3 | ✅ core visual scope (no text/console) |
+
+### Remaining book-chapter demos
+
+Chapters 2, 6, and 7 have no dedicated samples (2 and 6 are read-only
+chapters; 7's material is applied by chapter 13's MirrorMirror).
+
+| C++ demo | Chapter | Plan |
+|---|---|---|
+| BasicTessellation | 4 | Optional — plan says read ch. 4, implement tessellation once in Luna's DX12 book |
+| TessellationParams | 4 | Optional — better *run* (interactive parameter visualizer) than ported |
+| SkinAndBones | 8 | Skip — Luna's DX12 book has a full skinning chapter |
+| CurvedPointNormalTriangles | 9 | Skip — advanced tessellation |
+| InterlockingTerrainTiles | 9 | Skip — advanced tessellation |
+| ImageProcessor | 10 | **First optional continuation** — Gaussian/bilateral compute filters |
+| DeferredRendering | 11 | Optional, biggest lift — G-buffer + light passes |
+| LightPrepass | 11 | Optional — lighter deferred variant |
+| WaterSimulationI | 12 | **Second optional continuation** — compute heightfield fluid |
+| ParticleStorm | 12 | Optional — append/consume buffers + DrawInstancedIndirect |
+| MirrorMirror | 13 | Skip — deferred-context multithreading (dead end; DX12 does it right) |
+
+### Engine demos (no book chapter)
+
+Blog/engine showcases; port only if a technique becomes interesting:
+AmbientOcclusionI (SSAO), BasicScenes (scene graph), BasicRenderViews
+(render-view system), ViewFromTheWindow, VolumeRendering (3D textures),
+PhysicalRenderingSandbox (PBR playground).
+
+### Excluded
+
+BasicScripting + Glyphlets/GlyphletViewerWPF (Lua scripting / glyphlet
+hosting), KinectPlayground + Kinect2Playground (Kinect hardware),
+OculusRiftSample (Rift hardware), MFCwithD3D11 (MFC host).
 
 ### basic_window
 
