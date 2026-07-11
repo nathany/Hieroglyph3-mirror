@@ -7,6 +7,8 @@ members = [
     "apps/rotating_cube",
     "apps/basic_compute_shader",
     "apps/immediate_renderer",
+    "apps/basic_tessellation",
+    "apps/image_processor",
 ]
 
 [workspace.package]

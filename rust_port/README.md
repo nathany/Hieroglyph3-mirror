@@ -50,6 +50,35 @@ these ports — demos that show text render everything else.
 | `rotating_cube` | Applications/RotatingCube | 3 | ✅ matches C++ behavior |
 | `basic_compute_shader` | Applications/BasicComputeShader | 5 | ✅ pixel-identical to C++ |
 | `immediate_renderer` | Applications/ImmediateRenderer | 3 | ✅ core visual scope (no text/console) |
+| `basic_tessellation` | Applications/BasicTessellation | 4 | ✅ verified side-by-side vs C++ |
+| `image_processor` | Applications/ImageProcessor | 10 | ✅ all 5 filters/images/samplers (no text) |
+
+### basic_tessellation
+
+The chapter-4 hardware tessellation demo: `hedra.ms3d` (a small MilkShape3D
+loader in `src/ms3d.rs` mirrors `GeometryLoaderDX11::loadMS3DFile2`, including
+its Z-negation and winding flip) drawn as a `3_CONTROL_POINT_PATCHLIST`
+through VS → HS → tessellator → DS → PS from `BasicTessellation.hlsl`
+unchanged. Edge factors animate `sin(t)*6+7` (1 to 13, `fractional_even`), so
+the wireframe continuously splits and merges while the model spins. The
+wireframe is black because the shader's `FinalColor` is never set by the app
+and the engine zero-initializes parameters — verified against the C++ demo,
+which is also black. Note on cbuffer registers: each *stage* assigns its used
+cbuffers from b0 independently (Transforms is b0 in VS and DS; EdgeFactors is
+b0 in the HS; FinalColor is b0 in the PS).
+
+### image_processor
+
+The chapter-10 compute image filters (1024×640, no text overlay). Five
+images cycled with **I**, five algorithms with **N** — brute-force Gaussian,
+separable Gaussian, cached (groupshared) Gaussian, brute-force bilateral,
+separable bilateral, all shaders unchanged; separable variants ping-pong
+through an intermediate `R16G16B16A16_FLOAT` target with SRV/UAV unbinds
+between passes. **Space** cycles the viewer's sampler (linear-wrap vs
+linear-border-black) — this app repurposes Space, so no screenshot key,
+like the C++. Left-drag pans, right-drag/wheel zooms (`ImageViewerVS.hlsl`'s
+`ViewingParams`). Rendering is event-driven like the C++'s overridden
+message loop: blocking `GetMessage`, re-render only on invalidation.
 
 ### Remaining book-chapter demos
 
@@ -58,12 +87,10 @@ chapters; 7's material is applied by chapter 13's MirrorMirror).
 
 | C++ demo | Chapter | Plan |
 |---|---|---|
-| BasicTessellation | 4 | Optional — plan says read ch. 4, implement tessellation once in Luna's DX12 book |
 | TessellationParams | 4 | Optional — better *run* (interactive parameter visualizer) than ported |
 | SkinAndBones | 8 | Skip — Luna's DX12 book has a full skinning chapter |
 | CurvedPointNormalTriangles | 9 | Skip — advanced tessellation |
 | InterlockingTerrainTiles | 9 | Skip — advanced tessellation |
-| ImageProcessor | 10 | **First optional continuation** — Gaussian/bilateral compute filters |
 | DeferredRendering | 11 | Optional, biggest lift — G-buffer + light passes |
 | LightPrepass | 11 | Optional — lighter deferred variant |
 | WaterSimulationI | 12 | **Second optional continuation** — compute heightfield fluid |

@@ -1,0 +1,11 @@
+[package]
+name = "basic_tessellation"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Rust port of the BasicTessellation sample (Applications/BasicTessellation)"
+
+[dependencies]
+glyph.workspace = true
+windows.workspace = true
+glam.workspace = true
