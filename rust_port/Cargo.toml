@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["glyph", "apps/basic_window"]
+members = ["glyph", "apps/basic_window", "apps/basic_application"]
 
 [workspace.package]
 edition = "2024"
@@ -8,11 +8,17 @@ license = "MIT"
 
 [workspace.dependencies]
 glyph = { path = "glyph" }
+image = "0.25"
 
 [workspace.dependencies.windows]
 version = "0.62"
 features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
     "Win32_Graphics_Gdi",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
 ]

@@ -1,0 +1,11 @@
+[package]
+name = "basic_application"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Rust port of the BasicApplication sample (Applications/BasicApplication)"
+
+[dependencies]
+glyph.workspace = true
+windows.workspace = true
+image.workspace = true

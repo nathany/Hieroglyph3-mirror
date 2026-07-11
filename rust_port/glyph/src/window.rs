@@ -49,6 +49,14 @@ unsafe extern "system" fn internal_window_proc<W: WindowProc>(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    // SAFETY: `hwnd` is a live window of a class registered by
+    // `RenderWindow::initialize::<W>`, whose extra bytes are either still zero
+    // (messages sent during `CreateWindowExW`, before the pointer is stored) or
+    // hold the `*mut W` written by `SetWindowLongPtrW`. The null check covers
+    // the former; in the latter case the pointer is valid because the caller of
+    // `initialize` guarantees the handler outlives the window and doesn't move.
+    // Win32 delivers messages on the window's owning thread only, so no
+    // concurrent aliasing of `*obj_ptr` occurs.
     unsafe {
         let obj_ptr = GetWindowLongPtrW(hwnd, WINDOW_LONG_PTR_INDEX(0)) as *mut W;
         if obj_ptr.is_null() {
@@ -113,6 +121,15 @@ impl RenderWindow {
     /// lives for the duration of the program, as the samples do). Messages
     /// dispatched by later Win32 calls re-enter it.
     pub fn initialize<W: WindowProc>(&mut self, window_proc: &mut W) {
+        // SAFETY: Plain Win32 registration/creation calls with valid inputs:
+        // `wc` is fully initialized (including a wndproc matching the `W` whose
+        // pointer size `cbWndExtra` reserves), and the strings are NUL-terminated
+        // (`w!` literal / `HSTRING`). `SetWindowLongPtrW` stores `window_proc`
+        // for `internal_window_proc::<W>`; the caller upholds that the handler
+        // outlives the window (documented above). Messages dispatched re-entrantly
+        // by `CreateWindowExW`/`ShowWindow` are safe: the extra bytes are zero
+        // until after creation succeeds, and the handler reference stays valid
+        // for the duration of this call and beyond.
         unsafe {
             let mut wc = WNDCLASSEXW {
                 cbSize: size_of::<WNDCLASSEXW>() as u32,
@@ -179,6 +196,8 @@ impl RenderWindow {
 
     pub fn shutdown(&mut self) {
         if !self.hwnd.is_invalid() {
+            // SAFETY: `self.hwnd` is a window this instance created and still
+            // owns; it is nulled immediately after so it is never destroyed twice.
             unsafe {
                 let _ = DestroyWindow(self.hwnd);
             }
@@ -208,6 +227,8 @@ unsafe extern "system" fn simple_window_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    // SAFETY: Forwarding a message to the default handler with the exact
+    // arguments Win32 passed in is always valid.
     unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
 }
 
@@ -221,6 +242,10 @@ pub struct SimpleWindow {
 
 impl SimpleWindow {
     pub fn new(width: i32, height: i32, caption: &str) -> Self {
+        // SAFETY: Plain Win32 registration/creation calls with valid inputs:
+        // `wc` is fully initialized, its wndproc never dereferences anything
+        // (straight to `DefWindowProc`), and the strings are NUL-terminated
+        // (`w!` literal / `HSTRING`).
         unsafe {
             let wc = WNDCLASSEXW {
                 cbSize: size_of::<WNDCLASSEXW>() as u32,
@@ -278,6 +303,8 @@ impl SimpleWindow {
         if self.hwnd.is_invalid() {
             return;
         }
+        // SAFETY: Query/geometry calls on a window this instance owns; the
+        // out-param RECTs are valid stack locations.
         unsafe {
             let style = WINDOW_STYLE(GetWindowLongPtrW(self.hwnd, GWL_STYLE) as u32);
             let exstyle = WINDOW_EX_STYLE(GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE) as u32);
@@ -311,6 +338,8 @@ impl SimpleWindow {
 impl Drop for SimpleWindow {
     fn drop(&mut self) {
         if !self.hwnd.is_invalid() {
+            // SAFETY: `self.hwnd` is a window this instance created and still
+            // owns; it is nulled immediately after so it is never destroyed twice.
             unsafe {
                 let _ = DestroyWindow(self.hwnd);
             }

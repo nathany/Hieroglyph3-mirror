@@ -34,6 +34,7 @@ cargo run -p basic_window
 | App | C++ original | Book chapter | Status |
 |---|---|---|---|
 | `basic_window` | Applications/BasicWindow | 1 | ✅ matches C++ behavior |
+| `basic_application` | Applications/BasicApplication | 1 | ✅ matches C++ behavior |
 
 ### basic_window
 
@@ -43,3 +44,17 @@ after startup. Closing the main window quits; closing "Some Text" doesn't (its
 messages go straight to `DefWindowProc` — a quirk preserved from the C++
 sample). The app then spins in a `PeekMessage` loop, which is where later
 samples put their per-frame update/render.
+
+### basic_application
+
+First Direct3D 11 sample: 640×320 window at (25, 25), cleared each frame to a
+time-varying blue (`sin(t²) * 0.25 + 0.5` — the pulsing speeds up over time)
+and presented uncapped (`SyncInterval = 0`, as the C++ framework does).
+`Esc` quits; `Space` saves `BasicApplication<n>.png` (numbered from 100001)
+to the working directory via a staging-texture readback + the `image` crate,
+standing in for DirectXTK's `SaveWICTextureToFile`. Device creation mirrors
+`RendererDX11::Initialize` — hardware adapters tried at exactly feature level
+10.0, reference-driver fallback, debug layer in debug builds. Swap chain uses
+the engine's defaults (`R8G8B8A8_UNORM_SRGB`, 2 buffers, `DISCARD`); depth is
+`D32_FLOAT`. Resizing the window does not resize the swap chain — faithful to
+the C++, where nothing consumes the resize event in this sample.

@@ -33,6 +33,8 @@ impl WindowProc for WindowProcessor {
 
             // Sent when a window has been destroyed.
             WM_DESTROY => {
+                // SAFETY: Trivially safe to call from the thread that owns the
+                // window; only marked unsafe as an FFI function.
                 unsafe { PostQuitMessage(0) };
                 return LRESULT(0);
             }
@@ -40,6 +42,8 @@ impl WindowProc for WindowProcessor {
             _ => {}
         }
 
+        // SAFETY: Forwarding a message to the default handler with the exact
+        // arguments Win32 passed in is always valid.
         unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
     }
 }
@@ -62,6 +66,10 @@ fn main() {
     let mut msg = MSG::default();
 
     loop {
+        // SAFETY: Standard message pump: `msg` is a valid out-param, and
+        // `DispatchMessageW` re-enters our wndprocs, which is sound because
+        // `wndproc` (the handler window1 points at) lives until `main` returns
+        // and nothing else borrows it while the pump runs.
         unsafe {
             while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
                 if msg.message == WM_QUIT {
