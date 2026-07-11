@@ -213,6 +213,83 @@ impl Renderer {
         }
     }
 
+    /// Mirrors `RendererDX11::ResizeSwapChain` + the render-view resize logic
+    /// in `RenderApplication::HandleWindowResize`: release the backbuffer
+    /// views, resize the swap chain buffers, and recreate the RTV, depth
+    /// buffer, DSV, and viewport at the new size.
+    pub fn resize(&mut self, width: u32, height: u32) {
+        let width = width.max(1);
+        let height = height.max(1);
+
+        // SAFETY: All references to the old backbuffer must be released
+        // before `ResizeBuffers`, so the old views are dropped in place and
+        // the fields rewritten with the new ones. Failures abort via expect —
+        // the fields would otherwise be left holding dropped values.
+        unsafe {
+            self.context.OMSetRenderTargets(None, None);
+
+            std::ptr::drop_in_place(&mut self.rtv);
+            std::ptr::drop_in_place(&mut self.dsv);
+            std::ptr::drop_in_place(&mut self.backbuffer);
+
+            self.swap_chain
+                .ResizeBuffers(
+                    2,
+                    width,
+                    height,
+                    DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                    windows::Win32::Graphics::Dxgi::DXGI_SWAP_CHAIN_FLAG(0),
+                )
+                .expect("ResizeBuffers failed");
+
+            let backbuffer: ID3D11Texture2D =
+                self.swap_chain.GetBuffer(0).expect("GetBuffer after resize failed");
+            let mut rtv: Option<ID3D11RenderTargetView> = None;
+            self.device
+                .CreateRenderTargetView(&backbuffer, None, Some(&mut rtv))
+                .expect("CreateRenderTargetView after resize failed");
+
+            let depth_desc = D3D11_TEXTURE2D_DESC {
+                Width: width,
+                Height: height,
+                MipLevels: 1,
+                ArraySize: 1,
+                Format: DXGI_FORMAT_D32_FLOAT,
+                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                Usage: D3D11_USAGE_DEFAULT,
+                BindFlags: D3D11_BIND_DEPTH_STENCIL.0 as u32,
+                CPUAccessFlags: 0,
+                MiscFlags: 0,
+            };
+            let mut depth_texture: Option<ID3D11Texture2D> = None;
+            self.device
+                .CreateTexture2D(&depth_desc, None, Some(&mut depth_texture))
+                .expect("depth texture recreate failed");
+            let mut dsv: Option<ID3D11DepthStencilView> = None;
+            self.device
+                .CreateDepthStencilView(&depth_texture.unwrap(), None, Some(&mut dsv))
+                .expect("CreateDepthStencilView after resize failed");
+
+            std::ptr::write(&mut self.backbuffer, backbuffer);
+            std::ptr::write(&mut self.rtv, rtv.unwrap());
+            std::ptr::write(&mut self.dsv, dsv.unwrap());
+
+            self.context.OMSetRenderTargets(Some(&[Some(self.rtv.clone())]), &self.dsv);
+            let viewport = D3D11_VIEWPORT {
+                TopLeftX: 0.0,
+                TopLeftY: 0.0,
+                Width: width as f32,
+                Height: height as f32,
+                MinDepth: 0.0,
+                MaxDepth: 1.0,
+            };
+            self.context.RSSetViewports(Some(&[viewport]));
+        }
+
+        self.width = width;
+        self.height = height;
+    }
+
     /// Mirrors `RendererDX11::Present`'s defaults: no vsync, no flags.
     pub fn present(&self) {
         // SAFETY: The swap chain is alive for `self`'s lifetime; failures

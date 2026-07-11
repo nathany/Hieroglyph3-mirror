@@ -44,6 +44,7 @@ cargo run -p basic_window
 | `basic_application` | Applications/BasicApplication | 1 | ✅ matches C++ behavior |
 | `rotating_cube` | Applications/RotatingCube | 3 | ✅ matches C++ behavior |
 | `basic_compute_shader` | Applications/BasicComputeShader | 5 | ✅ pixel-identical to C++ |
+| `immediate_renderer` | Applications/ImmediateRenderer | 3 | ✅ core visual scope (no text/console) |
 
 ### basic_window
 
@@ -97,3 +98,23 @@ metadata — without this the output is uniformly wrong by a gamma curve.
 Screenshots verified **pixel-identical** (max channel diff 0) against
 `Applications/Bin/BasicComputeShader_Desktop.exe`, which is possible here
 because the output is static.
+
+### immediate_renderer
+
+The chapter-3 "immediate rendering" sample at **core visual scope**: all the
+rendered content and interaction of the C++ demo except text (the 3D
+`TextActor` and FPS overlay need the engine's sprite-font machinery) and the
+Lua console. The centerpiece lesson is the animated paraboloid grid — 20×20
+vertices + indices rebuilt from scratch every frame into DYNAMIC buffers
+(`src/mesh.rs` is the dynamic-buffer machinery plus `GeometryActor`'s shape
+builders: sphere/cone/disc/box/arrow/Bézier, ported math-for-math). Also:
+alpha-blended shape collection, `MeshedReconstruction.stl` (binary STL loader),
+skybox from a hand-parsed uncompressed DDS cube map, and a circling point
+light driving the engine's UE4-style PBR shaders
+(`vertex-color/textured.vertex-normal.point-light.perspective.*.hlsl`, used
+unchanged). First-person camera (right-drag look, W/A/S/D/Q/E, Ctrl sprint),
+keys 1/2/3 off-center projections, live swap-chain resize (`Renderer::resize`),
+Esc/Space as usual. The missing `Capsule.obj` is omitted — the C++ loads zero
+triangles for it. Note: this sample's C++ uses the engine's newer
+MaterialTemplate/PBR path, *not* the older Blinn-Phong
+`ImmediateGeometrySolid.hlsl` its comments suggest.
