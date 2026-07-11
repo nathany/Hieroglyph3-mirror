@@ -9,6 +9,7 @@ members = [
     "apps/immediate_renderer",
     "apps/basic_tessellation",
     "apps/image_processor",
+    "apps/tessellation_params",
 ]
 
 [workspace.package]
