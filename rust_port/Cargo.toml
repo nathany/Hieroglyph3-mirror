@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["glyph", "apps/basic_window"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+glyph = { path = "glyph" }
+
+[workspace.dependencies.windows]
+version = "0.62"
+features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Gdi",
+]
