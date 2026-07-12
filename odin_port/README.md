@@ -13,7 +13,7 @@ carry over here.
 
 ```
 odin_port/
-├── run.bat            # build + run one app: `run basic_window`
+├── odrun.bat          # build + run one app: `.\odrun.bat basic_window`
 ├── glyph/             # support library, imported as the `glyph:` collection
 │   ├── window/        #   Win32 window wrappers (≈ Win32RenderWindow, Win32Window)
 │   └── renderer/      #   device/swap chain/depth/screenshot (≈ RendererDX11 subset)
@@ -29,12 +29,19 @@ repository's `../Applications/Data/` tree, unchanged and uncopied.
 ## Build & run
 
 ```
-run basic_window
+.\odrun.bat basic_window
 ```
 
-(`run.bat` wraps `odin run apps\<name> -collection:glyph=glyph
--subsystem:windows -debug`. Drop `-subsystem:windows` to get a console for
-debug prints. Text rendering is permanently out of scope for these ports.)
+In PowerShell the leading `.\` is required — PowerShell doesn't search the
+current directory, so a bare `odrun` (or `run`) can find a same-named script
+elsewhere on PATH. In cmd, `odrun basic_window` works. `odrun.bat` wraps
+`odin run apps\<name> -collection:glyph=glyph -subsystem:windows -debug`; drop
+`-subsystem:windows` to get a console for debug prints. Text rendering is
+permanently out of scope for these ports.
+
+Data files (shaders, textures, models) load from the repo's
+`../Applications/Data` tree — the path is baked in at compile time from the
+source location, so lookup doesn't depend on the working directory.
 
 ## Applications
 
