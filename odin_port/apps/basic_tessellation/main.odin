@@ -36,6 +36,7 @@ import "core:time"
 import win32 "core:sys/windows"
 import d3d11 "vendor:directx/d3d11"
 import "glyph:camera"
+import "glyph:ms3d"
 import "glyph:renderer"
 import "glyph:shader"
 import "glyph:window"
@@ -170,12 +171,12 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	}
 	if device->CreateRasterizerState(&rs_desc, &s.wireframe) < 0 {return}
 
-	mesh := ms3d_load("hedra.ms3d") or_return
-	defer ms3d_destroy(&mesh)
+	mesh := ms3d.load("hedra.ms3d") or_return
+	defer ms3d.destroy(&mesh)
 	s.index_count = u32(len(mesh.indices))
 
 	vb_desc := d3d11.BUFFER_DESC {
-		ByteWidth = u32(len(mesh.vertices) * size_of(Ms3d_Vertex)),
+		ByteWidth = u32(len(mesh.vertices) * size_of(ms3d.Vertex)),
 		Usage     = .IMMUTABLE,
 		BindFlags = {.VERTEX_BUFFER},
 	}
@@ -292,7 +293,7 @@ main :: proc() {
 		write_cbuffer(ctx, scene.cb_rendering, &rendering)
 
 		ctx->IASetInputLayout(scene.input_layout)
-		stride: u32 = size_of(Ms3d_Vertex)
+		stride: u32 = size_of(ms3d.Vertex)
 		offset: u32 = 0
 		ctx->IASetVertexBuffers(0, 1, &scene.vertex_buffer, &stride, &offset)
 		ctx->IASetIndexBuffer(scene.index_buffer, .R32_UINT, 0)

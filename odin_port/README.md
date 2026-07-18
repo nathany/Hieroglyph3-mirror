@@ -55,6 +55,7 @@ source location, so lookup doesn't depend on the working directory.
 | `immediate_renderer` | Applications/ImmediateRenderer | 3 | ✅ core visual scope (no text/console) |
 | `image_processor` | Applications/ImageProcessor | 10 | ✅ all 5 filters/images/samplers (no text) |
 | `tessellation_params` | Applications/TessellationParams | 4 | ✅ state in the title bar (no text) |
+| `skin_and_bones` | Applications/SkinAndBones | 8 | ✅ skinning + displacement + gizmos (no text) |
 
 ### basic_window
 
@@ -135,6 +136,23 @@ run through `Process2DQuadTessFactorsAvg` in the shader). The C++ shows all
 state as on-screen text; here it lives in the **window title bar** instead.
 Space screenshots with the C++'s full `GetName` prefix ("Direct3D 11
 Tessellation Parameters Demo…").
+
+### skin_and_bones
+
+The chapter-8 vertex-skinning demo. A procedurally generated 6-bone weighted
+cone (`cone.odin` ports `GenerateWeightedSkinnedCone`, the engine's
+`AnimationStream` with QuadraticInOut easing, and the
+`SkinnedBoneController` skin-matrix math) appears twice: once as a plain
+skinned mesh (`MeshSkinnedTextured.hlsl`) and once tessellated + height-map
+displaced (`MeshSkinnedTessellatedTextured.hlsl`, 3-control-point patches),
+next to a rigid `box.ms3d` with `Tiles.png` for contrast. Every bone shows
+its coordinate-axis gizmo (`VertexColor.hlsl`). The bone swing eases through
+keyframes over 6 seconds and then stops — **A** replays it, exactly like the
+C++. Notables: the skinned shaders transform positions by `SkinMatrices`
+then `ViewProjMatrix` (the cbuffer's `WorldMatrix` is unused), so the
+actors' node motion rides inside the skin matrices via the bind-pose-before-
+positioning call order; and the app's `LightColor` parameter is never read
+by any of these shaders.
 
 ### immediate_renderer
 
