@@ -345,7 +345,7 @@ main :: proc() {
 		if state.save_screenshot {
 			state.save_screenshot = false
 			screenshot_number += 1
-			renderer.save_backbuffer_bmp(&r, fmt.tprintf("BasicApplication%d.bmp", screenshot_number))
+			renderer.save_backbuffer_png(&r, fmt.tprintf("BasicApplication%d.png", screenshot_number))
 		}
 	}
 }

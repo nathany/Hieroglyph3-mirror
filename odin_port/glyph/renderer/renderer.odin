@@ -8,10 +8,10 @@
 package renderer
 
 import "core:fmt"
-import "core:os"
 import win32 "core:sys/windows"
 import d3d11 "vendor:directx/d3d11"
 import dxgi "vendor:directx/dxgi"
+import stbi "vendor:stb/image"
 
 // The D3D11 objects every sample's ConfigureEngineComponents sets up:
 // device, swap chain (per SwapChainConfigDX11 defaults: R8G8B8A8_UNORM_SRGB,
@@ -181,13 +181,13 @@ present :: proc(r: ^Renderer) {
 }
 
 // Mirrors PipelineManagerDX11::SaveTextureScreenShot: copy the backbuffer
-// through a staging texture and write it out. The C++ writes PNG via
-// DirectXTK; Odin's core has no PNG *encoder* and the vendored
-// stb_image_write ships without a prebuilt lib, so this writes an
-// uncompressed 32-bit BMP instead — same pixels, different container. Alpha
-// is forced opaque, matching DirectXTK's output. Failures are ignored beyond
-// skipping the file, as in the C++ (which just logs them).
-save_backbuffer_bmp :: proc(r: ^Renderer, path: string) {
+// through a staging texture and write it as a PNG via the vendored
+// stb_image_write (its prebuilt lib ships with the Odin toolchain). Alpha is
+// dropped — the pixels repack to 3-channel RGB, matching DirectXTK's opaque
+// PNG output (the samples clear alpha to 0, which would otherwise make the
+// image fully transparent). Failures are ignored beyond skipping the file,
+// as in the C++ (which just logs them).
+save_backbuffer_png :: proc(r: ^Renderer, path: string) {
 	staging_desc := d3d11.TEXTURE2D_DESC {
 		Width          = r.width,
 		Height         = r.height,
@@ -212,51 +212,26 @@ save_backbuffer_bmp :: proc(r: ^Renderer, path: string) {
 	}
 	defer r.ctx->Unmap((^d3d11.IResource)(staging), 0)
 
-	// 32-bit BMP: 14-byte file header + 40-byte BITMAPINFOHEADER, negative
-	// height for top-down rows, pixels as BGRX.
+	// Compact rows (RowPitch may exceed width*4) and drop alpha: RGBA -> RGB.
 	w := int(r.width)
 	h := int(r.height)
-	pixel_bytes := w * h * 4
-	data := make([]u8, 54 + pixel_bytes)
-	defer delete(data)
-
-	put_u16 :: proc(b: []u8, off: int, v: u16) {
-		b[off] = u8(v)
-		b[off + 1] = u8(v >> 8)
-	}
-	put_u32 :: proc(b: []u8, off: int, v: u32) {
-		b[off] = u8(v)
-		b[off + 1] = u8(v >> 8)
-		b[off + 2] = u8(v >> 16)
-		b[off + 3] = u8(v >> 24)
-	}
-
-	data[0] = 'B'
-	data[1] = 'M'
-	put_u32(data, 2, u32(54 + pixel_bytes)) // file size
-	put_u32(data, 10, 54) // pixel data offset
-	put_u32(data, 14, 40) // BITMAPINFOHEADER size
-	put_u32(data, 18, u32(w))
-	put_u32(data, 22, u32(-h)) // negative = top-down
-	put_u16(data, 26, 1) // planes
-	put_u16(data, 28, 32) // bits per pixel
-	// compression BI_RGB = 0, remaining header fields stay zero.
+	rgb := make([]u8, w * h * 3)
+	defer delete(rgb)
 
 	src := ([^]u8)(mapped.pData)
 	for row in 0 ..< h {
 		src_row := int(mapped.RowPitch) * row
-		dst_row := 54 + w * 4 * row
+		dst_row := w * 3 * row
 		for x in 0 ..< w {
 			s := src_row + x * 4
-			d := dst_row + x * 4
-			data[d + 0] = src[s + 2] // B
-			data[d + 1] = src[s + 1] // G
-			data[d + 2] = src[s + 0] // R
-			data[d + 3] = 0xFF
+			d := dst_row + x * 3
+			rgb[d + 0] = src[s + 0]
+			rgb[d + 1] = src[s + 1]
+			rgb[d + 2] = src[s + 2]
 		}
 	}
 
-	if err := os.write_entire_file(path, data); err != nil {
-		fmt.eprintln("failed to write", path, err)
+	if stbi.write_png(fmt.ctprintf("%s", path), i32(w), i32(h), 3, raw_data(rgb), i32(w * 3)) == 0 {
+		fmt.eprintln("failed to write", path)
 	}
 }

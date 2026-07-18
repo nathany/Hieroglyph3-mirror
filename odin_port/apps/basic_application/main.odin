@@ -9,9 +9,8 @@
 //
 // Behavior inherited from the C++ Application framework:
 //   - Esc (key up) quits.
-//   - Space (key up) saves a screenshot of the backbuffer to the working
-//     directory, numbered from 100001 (the C++'s numbering; see the BMP note
-//     in glyph:renderer).
+//   - Space (key up) saves a PNG screenshot of the backbuffer to the working
+//     directory, numbered from 100001 (the C++'s numbering).
 //   - Closing the window quits.
 //   - Resizing does nothing to the swap chain (no one handles the resize
 //     event in this sample), so the 640x320 image is stretched — faithful
@@ -116,7 +115,7 @@ main :: proc() {
 		if state.save_screenshot {
 			state.save_screenshot = false
 			screenshot_number += 1
-			renderer.save_backbuffer_bmp(&r, fmt.tprintf("BasicApplication%d.bmp", screenshot_number))
+			renderer.save_backbuffer_png(&r, fmt.tprintf("BasicApplication%d.png", screenshot_number))
 		}
 	}
 }

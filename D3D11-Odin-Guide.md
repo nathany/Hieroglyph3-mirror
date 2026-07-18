@@ -25,7 +25,7 @@ matrix to manage:
 | Shader compilation | `vendor:directx/d3d_compiler` | FXC, Shader Model 5.0 — same as the book. `vendor:directx/dxc` exists but isn't needed until DX12/SM6. |
 | Win32 API | `core:sys/windows` | Window creation, message pump, `L("...")` UTF-16 literals |
 | Math | built-in `matrix[4,4]f32` + `core:math/linalg` | See the matrix section below — this is the one area needing real care |
-| Image loading (ch. 5+) | `core:image/png` | Pure-Odin PNG loader, zero C deps — enough for the book's textures. `vendor:stb/image` covers other formats but needs a one-time build of the vendored C lib (`vendor/stb/lib`). |
+| Image loading (ch. 5+) | `core:image/png` | Pure-Odin PNG loader, zero C deps — enough for the book's textures. `vendor:stb/image` covers other formats and *writing* PNGs (screenshots) — its prebuilt libs, `stb_image_write.lib` included, ship in current toolchains' `vendor/stb/lib`. |
 | Timing | `core:time` | `tick_now()`/`tick_diff()` replace the engine's QPC `Timer` class |
 
 **Rosetta stone:** the official Odin examples repo contains

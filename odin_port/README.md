@@ -63,12 +63,10 @@ samples put their per-frame update/render.
 
 First Direct3D 11 sample: 640×320 window at (25, 25), cleared each frame to
 a time-varying blue (`sin(t²) * 0.25 + 0.5` — the pulsing speeds up over
-time) and presented uncapped. `Esc` quits; `Space` saves a numbered
-screenshot of the backbuffer. One deviation: screenshots are **BMP**, not
-PNG — Odin's core has a PNG decoder but no encoder, and the vendored
-`stb_image_write` ships without a prebuilt lib, so `glyph:renderer` writes an
-uncompressed 32-bit BMP (same pixels, alpha forced opaque like DirectXTK's
-output). Device creation mirrors `RendererDX11::Initialize` — hardware
+time) and presented uncapped. `Esc` quits; `Space` saves a numbered PNG
+screenshot of the backbuffer via the vendored `stb_image_write` (its prebuilt
+lib ships with the Odin toolchain), with alpha dropped to opaque RGB like
+DirectXTK's output. Device creation mirrors `RendererDX11::Initialize` — hardware
 adapters tried at exactly feature level 10.0, reference-driver fallback,
 debug layer under `-debug`. Swap chain uses the engine's defaults
 (`R8G8B8A8_UNORM_SRGB`, 2 buffers, `DISCARD`); depth is `D32_FLOAT`.
