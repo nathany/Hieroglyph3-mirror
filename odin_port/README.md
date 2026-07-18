@@ -51,6 +51,7 @@ source location, so lookup doesn't depend on the working directory.
 | `basic_application` | Applications/BasicApplication | 1 | ✅ matches C++ behavior |
 | `rotating_cube` | Applications/RotatingCube | 3 | ✅ matches C++ behavior |
 | `basic_compute_shader` | Applications/BasicComputeShader | 5 | ✅ pixel-identical to C++ |
+| `basic_tessellation` | Applications/BasicTessellation | 4 | ✅ matches C++ behavior |
 
 ### basic_window
 
@@ -104,3 +105,17 @@ output is uniformly wrong by a gamma curve. Screenshots verified
 **pixel-identical** (max channel diff 0) against the C++
 `BasicComputeShader_Desktop.exe` reference, which is possible because the
 output is static.
+
+### basic_tessellation
+
+The chapter-4 hardware tessellation demo: `hedra.ms3d` (a small MilkShape3D
+loader in `ms3d.odin` mirrors `GeometryLoaderDX11::loadMS3DFile2`, including
+its Z-negation and winding flip) drawn as a `3_CONTROL_POINT_PATCHLIST`
+through VS → HS → tessellator → DS → PS from `BasicTessellation.hlsl`
+unchanged. Edge factors animate `sin(t)*6+7` (1 to 13, `fractional_even`), so
+the wireframe continuously splits and merges while the model spins. The
+wireframe is black because the shader's `FinalColor` is never set by the app
+and the engine zero-initializes parameters — matching the C++. Note on
+cbuffer registers: each *stage* assigns its used cbuffers from b0
+independently (`Transforms` is b0 in VS and DS; `EdgeFactors` is b0 in the
+HS; `FinalColor` is b0 in the PS).
