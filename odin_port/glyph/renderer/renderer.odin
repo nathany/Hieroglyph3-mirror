@@ -183,6 +183,59 @@ present :: proc(r: ^Renderer) {
 	r.swap_chain->Present(0, {})
 }
 
+// Mirrors RendererDX11::ResizeSwapChain + the render-view resize logic in
+// RenderApplication::HandleWindowResize: release the backbuffer views,
+// resize the swap chain buffers, and recreate the RTV, depth buffer, DSV,
+// and viewport at the new size. All references to the old backbuffer must be
+// released before ResizeBuffers.
+resize :: proc(r: ^Renderer, width, height: u32) {
+	width := max(width, 1)
+	height := max(height, 1)
+
+	r.ctx->OMSetRenderTargets(0, nil, nil)
+	r.rtv->Release()
+	r.rtv = nil
+	r.dsv->Release()
+	r.dsv = nil
+	r.backbuffer->Release()
+	r.backbuffer = nil
+
+	if r.swap_chain->ResizeBuffers(2, width, height, .R8G8B8A8_UNORM_SRGB, {}) < 0 {
+		fmt.eprintln("ResizeBuffers failed")
+		return
+	}
+
+	if r.swap_chain->GetBuffer(0, d3d11.ITexture2D_UUID, (^rawptr)(&r.backbuffer)) < 0 {return}
+	if r.device->CreateRenderTargetView((^d3d11.IResource)(r.backbuffer), nil, &r.rtv) < 0 {return}
+
+	depth_desc := d3d11.TEXTURE2D_DESC {
+		Width      = width,
+		Height     = height,
+		MipLevels  = 1,
+		ArraySize  = 1,
+		Format     = .D32_FLOAT,
+		SampleDesc = {Count = 1, Quality = 0},
+		Usage      = .DEFAULT,
+		BindFlags  = {.DEPTH_STENCIL},
+	}
+	depth_texture: ^d3d11.ITexture2D
+	if r.device->CreateTexture2D(&depth_desc, nil, &depth_texture) < 0 {return}
+	defer depth_texture->Release()
+	if r.device->CreateDepthStencilView((^d3d11.IResource)(depth_texture), nil, &r.dsv) < 0 {return}
+
+	r.ctx->OMSetRenderTargets(1, &r.rtv, r.dsv)
+	viewport := d3d11.VIEWPORT {
+		Width    = f32(width),
+		Height   = f32(height),
+		MinDepth = 0.0,
+		MaxDepth = 1.0,
+	}
+	r.ctx->RSSetViewports(1, &viewport)
+
+	r.width = width
+	r.height = height
+}
+
 // Does the decoded PNG declare sRGB gamma — an sRGB chunk, or a gAMA chunk
 // with the sRGB value 45455 (1/2.2 in PNG's 100k fixed-point encoding)? This
 // is the signal WIC/DirectXTK use to pick an _SRGB texture format — and it

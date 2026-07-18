@@ -52,6 +52,8 @@ source location, so lookup doesn't depend on the working directory.
 | `rotating_cube` | Applications/RotatingCube | 3 | ✅ matches C++ behavior |
 | `basic_compute_shader` | Applications/BasicComputeShader | 5 | ✅ pixel-identical to C++ |
 | `basic_tessellation` | Applications/BasicTessellation | 4 | ✅ matches C++ behavior |
+| `immediate_renderer` | Applications/ImmediateRenderer | 3 | ✅ core visual scope (no text/console) |
+| `image_processor` | Applications/ImageProcessor | 10 | ✅ all 5 filters/images/samplers (no text) |
 
 ### basic_window
 
@@ -119,3 +121,32 @@ and the engine zero-initializes parameters — matching the C++. Note on
 cbuffer registers: each *stage* assigns its used cbuffers from b0
 independently (`Transforms` is b0 in VS and DS; `EdgeFactors` is b0 in the
 HS; `FinalColor` is b0 in the PS).
+
+### immediate_renderer
+
+The chapter-3 "immediate rendering" sample at **core visual scope** (no 3D
+text/FPS overlay/Lua console; the missing `Capsule.obj` draws nothing in the
+C++ either). The centerpiece is the animated paraboloid grid — 20×20
+vertices + indices rebuilt from scratch every frame into DYNAMIC buffers
+(`mesh.odin` holds the dynamic-buffer machinery plus `GeometryActor`'s shape
+builders: sphere/cone/disc/box/arrow/Bézier). Also: alpha-blended shape
+collection, `MeshedReconstruction.stl` (binary STL loader), skybox from a
+hand-parsed uncompressed DDS cube map (`core:image` has no DDS support), and
+a circling point light driving the engine's UE4-style PBR shaders, used
+unchanged. First-person camera (right-drag look, W/A/S/D/Q/E, Ctrl sprint),
+keys 1/2/3 off-center projections (`glyph:camera`'s
+`perspective_off_center_lh`), live swap-chain resize (`glyph:renderer`'s
+`resize`), Esc/Space as usual.
+
+### image_processor
+
+The chapter-10 compute image filters (1024×640, no text overlay). Five
+images cycled with **I**, five algorithms with **N** — brute-force Gaussian,
+separable Gaussian, cached (groupshared) Gaussian, brute-force bilateral,
+separable bilateral, all shaders unchanged; separable variants ping-pong
+through an intermediate `R16G16B16A16_FLOAT` target with SRV/UAV unbinds
+between passes. **Space** cycles the viewer's sampler (linear-wrap vs
+linear-border-black) — this app repurposes Space, so no screenshot key, like
+the C++. Left-drag pans, right-drag/wheel zooms. Rendering is event-driven
+like the C++'s overridden message loop: blocking `GetMessage`, re-render
+only on invalidation — the CPU idles between inputs.

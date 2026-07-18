@@ -25,6 +25,19 @@ perspective_fov_lh :: proc(fov_y, aspect, near, far: f32) -> matrix[4, 4]f32 {
 	}
 }
 
+// Off-center (asymmetric-frustum) LH projection with 0..1 depth — the
+// column-vector form of XMMatrixPerspectiveOffCenterLH / the engine's
+// Camera::SetOffsetProjectionParams.
+perspective_off_center_lh :: proc(left, right, bottom, top, near, far: f32) -> matrix[4, 4]f32 {
+	z_scale := far / (far - near)
+	return {
+		2 * near / (right - left), 0,                         (left + right) / (left - right), 0,
+		0,                         2 * near / (top - bottom), (top + bottom) / (bottom - top), 0,
+		0,                         0,                         z_scale,                         -near * z_scale,
+		0,                         0,                         1,                               0,
+	}
+}
+
 look_at_lh :: proc(eye, at, up: [3]f32) -> matrix[4, 4]f32 {
 	z := linalg.normalize(at - eye)
 	x := linalg.normalize(linalg.cross(up, z))

@@ -61,7 +61,12 @@ compile :: proc(filename, entry, target: string) -> (code: ^d3dc.ID3DBlob, ok: b
 		&errors,
 	)
 	if errors != nil {
-		fmt.eprintf("%s(%s): %s\n", filename, entry, cstring(errors->GetBufferPointer()))
+		// Print the message blob only on failure — on success it just holds
+		// warnings (e.g. X3206 truncation in the book's shaders, which the
+		// C++ sees too).
+		if hr < 0 {
+			fmt.eprintf("%s(%s): %s\n", filename, entry, cstring(errors->GetBufferPointer()))
+		}
 		errors->Release()
 	}
 	if hr < 0 {
