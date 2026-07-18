@@ -57,6 +57,7 @@ source location, so lookup doesn't depend on the working directory.
 | `tessellation_params` | Applications/TessellationParams | 4 | ✅ state in the title bar (no text) |
 | `skin_and_bones` | Applications/SkinAndBones | 8 | ✅ skinning + displacement + gizmos (no text) |
 | `curved_pn_triangles` | Applications/CurvedPointNormalTriangles | 9 | ✅ orbiting camera, W/A/± controls (no text) |
+| `interlocking_terrain_tiles` | Applications/InterlockingTerrainTiles | 9 | ✅ LOD terrain, W/L/D/A controls (no text) |
 
 ### basic_window
 
@@ -165,6 +166,18 @@ adjusts the tessellation factor (1–10), **A** swaps in the silhouette-
 adaptive hull shader — preserved C++ quirk: that shader expects 6-point
 adjacency patches the app never loads, so silhouette mode doesn't render in
 the original either. The pipeline-statistics overlay is omitted (text).
+
+### interlocking_terrain_tiles
+
+Chapter 9's adaptive terrain: a 32×32 grid of tiles drawn as
+**12-control-point patches** — each tile's 4 corners plus 8 edge-clamped
+neighbour points, the "interlocking" trick that keeps adjacent tiles'
+edge tessellation crack-free — displaced by `TerrainHeightMap.png` in the
+domain shader with distance-based LOD from the hull shader. **W** toggles
+wireframe/cull-none vs solid/cull-front, **L** swaps simple vs complex hull
+LOD (complex reads a `texLODLookup` the C++ never binds either — preserved
+quirk), **D** cycles solid/N·L/LOD-debug domain shaders (three
+`compile_defines` variants), **A** freezes the auto-orbiting viewpoint.
 
 ### immediate_renderer
 
