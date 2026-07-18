@@ -54,6 +54,7 @@ source location, so lookup doesn't depend on the working directory.
 | `basic_tessellation` | Applications/BasicTessellation | 4 | ✅ matches C++ behavior |
 | `immediate_renderer` | Applications/ImmediateRenderer | 3 | ✅ core visual scope (no text/console) |
 | `image_processor` | Applications/ImageProcessor | 10 | ✅ all 5 filters/images/samplers (no text) |
+| `tessellation_params` | Applications/TessellationParams | 4 | ✅ state in the title bar (no text) |
 
 ### basic_window
 
@@ -121,6 +122,19 @@ and the engine zero-initializes parameters — matching the C++. Note on
 cbuffer registers: each *stage* assigns its used cbuffers from b0
 independently (`Transforms` is b0 in VS and DS; `EdgeFactors` is b0 in the
 HS; `FinalColor` is b0 in the PS).
+
+### tessellation_params
+
+The chapter-4 interactive tessellation explorer: one quad or triangle patch,
+wireframe on white, with every tessellator input adjustable live. **G**
+toggles domain, **P** cycles partitioning (pow2/integer/fractional_odd/
+fractional_even — one hull shader compiled per mode via preprocessor
+defines, `glyph:shader`'s `compile_defines`), **E**/**I** pick which edge or
+inside factor to edit, **numpad +/−** adjust it (clamped 1–64, quad factors
+run through `Process2DQuadTessFactorsAvg` in the shader). The C++ shows all
+state as on-screen text; here it lives in the **window title bar** instead.
+Space screenshots with the C++'s full `GetName` prefix ("Direct3D 11
+Tessellation Parameters Demo…").
 
 ### immediate_renderer
 
