@@ -56,6 +56,7 @@ source location, so lookup doesn't depend on the working directory.
 | `image_processor` | Applications/ImageProcessor | 10 | ✅ all 5 filters/images/samplers (no text) |
 | `tessellation_params` | Applications/TessellationParams | 4 | ✅ state in the title bar (no text) |
 | `skin_and_bones` | Applications/SkinAndBones | 8 | ✅ skinning + displacement + gizmos (no text) |
+| `curved_pn_triangles` | Applications/CurvedPointNormalTriangles | 9 | ✅ orbiting camera, W/A/± controls (no text) |
 
 ### basic_window
 
@@ -153,6 +154,17 @@ then `ViewProjMatrix` (the cbuffer's `WorldMatrix` is unused), so the
 actors' node motion rides inside the skin matrices via the bind-pose-before-
 positioning call order; and the app's `LightColor` parameter is never read
 by any of these shaders.
+
+### curved_pn_triangles
+
+Chapter 9's curved point-normal triangles: the flat 4-triangle `CPNTest.ply`
+(a tiny ASCII PLY loader lives in `ply.odin`) is inflated into cubic Bézier
+patches by `CurvedPointNormalTriangles.hlsl` (13 control points per patch),
+while the camera orbits (30 s/circuit). **W** toggles wireframe/solid, **±**
+adjusts the tessellation factor (1–10), **A** swaps in the silhouette-
+adaptive hull shader — preserved C++ quirk: that shader expects 6-point
+adjacency patches the app never loads, so silhouette mode doesn't render in
+the original either. The pipeline-statistics overlay is omitted (text).
 
 ### immediate_renderer
 
