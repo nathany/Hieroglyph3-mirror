@@ -48,6 +48,14 @@ compile_defines :: proc(filename, entry, target: string, defines: []cstring) -> 
 	}
 	defer delete(source)
 
+	return compile_source(string(source), filename, entry, target, defines)
+}
+
+// Compile from an in-memory HLSL string instead of a data file — for the
+// rare support shader that has no C++ data-file counterpart (e.g. the
+// fullscreen blit standing in for the engine's SpriteRenderer). `name` is
+// only used in error messages.
+compile_source :: proc(source: string, name, entry, target: string, defines: []cstring) -> (code: ^d3dc.ID3DBlob, ok: bool) {
 	flags := d3dc.D3DCOMPILE{.PACK_MATRIX_ROW_MAJOR}
 	when ODIN_DEBUG {
 		flags += {.DEBUG, .SKIP_OPTIMIZATION}
@@ -65,7 +73,7 @@ compile_defines :: proc(filename, entry, target: string, defines: []cstring) -> 
 	hr := d3dc.Compile(
 		raw_data(source),
 		len(source),
-		fmt.ctprintf("%s", filename),
+		fmt.ctprintf("%s", name),
 		raw_data(macros) if len(defines) > 0 else nil,
 		nil, // include handler
 		fmt.ctprintf("%s", entry),
@@ -80,7 +88,7 @@ compile_defines :: proc(filename, entry, target: string, defines: []cstring) -> 
 		// warnings (e.g. X3206 truncation in the book's shaders, which the
 		// C++ sees too).
 		if hr < 0 {
-			fmt.eprintf("%s(%s): %s\n", filename, entry, cstring(errors->GetBufferPointer()))
+			fmt.eprintf("%s(%s): %s\n", name, entry, cstring(errors->GetBufferPointer()))
 		}
 		errors->Release()
 	}

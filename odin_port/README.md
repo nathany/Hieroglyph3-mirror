@@ -58,6 +58,7 @@ source location, so lookup doesn't depend on the working directory.
 | `skin_and_bones` | Applications/SkinAndBones | 8 | ✅ skinning + displacement + gizmos (no text) |
 | `curved_pn_triangles` | Applications/CurvedPointNormalTriangles | 9 | ✅ orbiting camera, W/A/± controls (no text) |
 | `interlocking_terrain_tiles` | Applications/InterlockingTerrainTiles | 9 | ✅ LOD terrain, W/L/D/A controls (no text) |
+| `light_prepass` | Applications/LightPrepass | 11 | ✅ MSAA deferred lighting, N cycles light count (no text) |
 
 ### basic_window
 
@@ -178,6 +179,27 @@ wireframe/cull-none vs solid/cull-front, **L** swaps simple vs complex hull
 LOD (complex reads a `texLODLookup` the C++ never binds either — preserved
 quirk), **D** cycles solid/N·L/LOD-debug domain shaders (three
 `compile_defines` variants), **A** freezes the auto-orbiting viewpoint.
+
+### light_prepass
+
+Chapter 11's light prepass (deferred lighting) renderer, everything at 4x
+MSAA: (1) `Sample_Scene.ms3d` fills a G-Buffer (`GBufferLP.hlsl`) with
+spheremap-encoded normal-mapped normals, specular power, and an edge flag
+from `SV_Coverage`, writing stencil 1 where geometry landed; (2) a
+fullscreen mask pass (`MaskLP.hlsl`) bumps edge pixels' stencil to 2;
+(3) every point light is one vertex — a geometry shader fits a screen quad
+to the light volume at its far depth, and GREATER_EQUAL testing against
+the **read-only depth view** keeps only pixels where the volume meets
+geometry; lighting accumulates additively (`LightsLP.hlsl`), per-pixel at
+stencil 1 and per-sample (`SV_SampleIndex`) at stencil 2; (4) the scene
+re-renders (`FinalPassLP.hlsl`), combining covered light samples with the
+`Hex.png` albedo; (5) MSAA resolve + blit (an inline fullscreen-triangle
+shader standing in for the engine's SpriteRenderer). The tangent frame the
+normal mapping needs is computed on load (`GeometryDX11::ComputeTangentFrame`'s
+Lengyel method). **N** cycles 3x3x3/5x5x5/7x7x7 point-light grids
+(red-to-cyan color lerp — shown in the title bar), first-person camera as
+usual, live resize recreates all five render targets. The C++ compiles
+spot/directional light shaders it never draws; those are omitted.
 
 ### immediate_renderer
 
