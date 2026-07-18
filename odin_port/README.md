@@ -49,6 +49,8 @@ source location, so lookup doesn't depend on the working directory.
 |---|---|---|---|
 | `basic_window` | Applications/BasicWindow | 1 | ✅ matches C++ behavior |
 | `basic_application` | Applications/BasicApplication | 1 | ✅ matches C++ behavior |
+| `rotating_cube` | Applications/RotatingCube | 3 | ✅ matches C++ behavior |
+| `basic_compute_shader` | Applications/BasicComputeShader | 5 | ✅ pixel-identical to C++ |
 
 ### basic_window
 
@@ -71,3 +73,34 @@ adapters tried at exactly feature level 10.0, reference-driver fallback,
 debug layer under `-debug`. Swap chain uses the engine's defaults
 (`R8G8B8A8_UNORM_SRGB`, 2 buffers, `DISCARD`); depth is `D32_FLOAT`.
 Resizing does not resize the swap chain — faithful to the C++.
+
+### rotating_cube
+
+The book's first real render (640×480): an indexed color cube spun by a
+world matrix rebuilt each frame, drawn VS → GS → PS with
+`RotatingCube.hlsl` unchanged. The geometry shader — not the vertex shader —
+applies `WorldViewProjMatrix` and "blows up" each face along its normal, so
+the cbuffer binds to the GS stage only. Matrix handling: shaders compile with
+`D3DCOMPILE_PACK_MATRIX_ROW_MAJOR` (as the engine's `ShaderFactoryDX11`
+does), so plain `matrix[4,4]f32` fields compose naturally
+(`proj * view * world`) with zero transposes — see the note in
+`glyph/shader/shader.odin` for why `#row_major` must *not* be combined with
+the compile flag. Camera via `glyph:camera`'s hand-rolled LH 0..1-depth
+helpers (core:math/linalg's are GL-convention). The window and screenshot
+prefix say "BasicApplication" because the C++ `GetName()` does — a
+copy-paste quirk in the original, preserved.
+
+### basic_compute_shader
+
+The book's first compute pipeline (640×480, feature level 11.0 for
+`cs_5_0`). Each frame: `InvertColorCS.hlsl` reads `Outcrop.png` (SRV t0) and
+writes the inverted image to an `R16G16B16A16_FLOAT` texture (UAV u0) in
+20×20 thread groups dispatched 32×24; the CS bindings are then cleared (the
+C++'s `ClearPipelineResources`) so a fullscreen quad can `Load` the result in
+the pixel shader. Textures decode with pure-Odin `core:image/png`, and the
+loader mirrors WICTextureLoader's sRGB handling: `Outcrop.png` carries
+sRGB/gAMA chunks, so the texture gets an `_SRGB` format — without this the
+output is uniformly wrong by a gamma curve. Screenshots verified
+**pixel-identical** (max channel diff 0) against the C++
+`BasicComputeShader_Desktop.exe` reference, which is possible because the
+output is static.

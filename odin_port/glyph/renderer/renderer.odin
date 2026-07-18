@@ -8,10 +8,13 @@
 package renderer
 
 import "core:fmt"
+import "core:image"
+import "core:image/png"
 import win32 "core:sys/windows"
 import d3d11 "vendor:directx/d3d11"
 import dxgi "vendor:directx/dxgi"
 import stbi "vendor:stb/image"
+import "glyph:paths"
 
 // The D3D11 objects every sample's ConfigureEngineComponents sets up:
 // device, swap chain (per SwapChainConfigDX11 defaults: R8G8B8A8_UNORM_SRGB,
@@ -178,6 +181,91 @@ destroy :: proc(r: ^Renderer) {
 // Mirrors RendererDX11::Present's defaults: no vsync, no flags.
 present :: proc(r: ^Renderer) {
 	r.swap_chain->Present(0, {})
+}
+
+// Does the decoded PNG declare sRGB gamma — an sRGB chunk, or a gAMA chunk
+// with the sRGB value 45455 (1/2.2 in PNG's 100k fixed-point encoding)? This
+// is the signal WIC/DirectXTK use to pick an _SRGB texture format — and it
+// matters: it decides whether shader Load/Sample returns raw or linearized
+// values, and the book's data files carry the metadata (found the hard way
+// in the Rust port, where plain UNORM left every filtered pixel off by a
+// gamma curve). The chunks come from core:image/png's `.return_metadata`.
+@(private)
+png_declares_srgb :: proc(img: ^image.Image) -> bool {
+	info, has_info := img.metadata.(^image.PNG_Info)
+	if !has_info {
+		return false
+	}
+	for c in info.chunks {
+		#partial switch c.header.type {
+		case .sRGB:
+			return true
+		case .gAMA:
+			if g, g_ok := png.gamma(c); g_ok && int(g * 100_000 + 0.5) == 45455 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Mirrors RendererDX11::LoadTexture (which uses DirectXTK's
+// WICTextureLoader): load Applications/Data/Textures/<filename> into an
+// immutable RGBA8 texture — with the _SRGB format when the PNG declares sRGB
+// gamma, like WICTextureLoader's default flags — and create a default shader
+// resource view for it. Decoding is pure-Odin core:image/png.
+load_texture_png :: proc(
+	r: ^Renderer,
+	filename: string,
+) -> (
+	texture: ^d3d11.ITexture2D,
+	srv: ^d3d11.IShaderResourceView,
+	ok: bool,
+) {
+	path, found := paths.find_data_file("Textures", filename)
+	if !found {
+		fmt.eprintln("texture not found:", filename)
+		return
+	}
+
+	img, img_err := png.load_from_file(path, {.alpha_add_if_missing, .return_metadata})
+	if img_err != nil {
+		fmt.eprintln("failed to load", path, img_err)
+		return
+	}
+	defer png.destroy(img)
+
+	if img.depth != 8 || img.channels != 4 {
+		fmt.eprintln("unsupported PNG layout:", path, img.channels, "channels,", img.depth, "bit")
+		return
+	}
+
+	format: dxgi.FORMAT = .R8G8B8A8_UNORM_SRGB if png_declares_srgb(img) else .R8G8B8A8_UNORM
+
+	desc := d3d11.TEXTURE2D_DESC {
+		Width      = u32(img.width),
+		Height     = u32(img.height),
+		MipLevels  = 1,
+		ArraySize  = 1,
+		Format     = format,
+		SampleDesc = {Count = 1, Quality = 0},
+		Usage      = .IMMUTABLE,
+		BindFlags  = {.SHADER_RESOURCE},
+	}
+	init := d3d11.SUBRESOURCE_DATA {
+		pSysMem     = raw_data(img.pixels.buf),
+		SysMemPitch = u32(img.width * 4),
+	}
+	if r.device->CreateTexture2D(&desc, &init, &texture) < 0 {
+		return
+	}
+	if r.device->CreateShaderResourceView((^d3d11.IResource)(texture), nil, &srv) < 0 {
+		texture->Release()
+		texture = nil
+		return
+	}
+
+	return texture, srv, true
 }
 
 // Mirrors PipelineManagerDX11::SaveTextureScreenShot: copy the backbuffer
