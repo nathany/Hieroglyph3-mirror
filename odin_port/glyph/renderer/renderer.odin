@@ -240,9 +240,9 @@ resize :: proc(r: ^Renderer, width, height: u32) {
 // with the sRGB value 45455 (1/2.2 in PNG's 100k fixed-point encoding)? This
 // is the signal WIC/DirectXTK use to pick an _SRGB texture format — and it
 // matters: it decides whether shader Load/Sample returns raw or linearized
-// values, and the book's data files carry the metadata (found the hard way
-// in the Rust port, where plain UNORM left every filtered pixel off by a
-// gamma curve). The chunks come from core:image/png's `.return_metadata`.
+// values, and the book's data files carry the metadata (found the hard way —
+// plain UNORM leaves every filtered pixel off by a gamma curve). The chunks
+// come from core:image/png's `.return_metadata`.
 @(private)
 png_declares_srgb :: proc(img: ^image.Image) -> bool {
 	info, has_info := img.metadata.(^image.PNG_Info)

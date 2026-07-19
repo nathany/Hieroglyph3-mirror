@@ -4,10 +4,7 @@ Odin reference implementations of the Hieroglyph3 sample applications from
 *Practical Rendering and Computation with Direct3D 11*, written against raw
 D3D11 via `vendor:directx`. Companion to
 [D3D11-Odin-Guide.md](../D3D11-Odin-Guide.md); each app mirrors the behavior
-of its C++ original (in `../Applications/`). The sibling `rust_port/` (on the
-`rust` branch) is the same exercise in Rust — behavioral findings from those
-ports (engine quirks, sRGB texture metadata, per-stage cbuffer registers)
-carry over here.
+of its C++ original (in `../Applications/`).
 
 ## Layout
 

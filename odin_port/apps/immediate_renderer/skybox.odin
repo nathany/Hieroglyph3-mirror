@@ -19,8 +19,8 @@ import "glyph:renderer"
 
 // The skybox vertex mirrors the engine's TexturedVertex (position +
 // texcoords, 20 bytes): the shader only *uses* the position, but its input
-// signature declares TEXCOORD0, so the layout must supply it (a lesson from
-// the Rust port — CreateInputLayout fails E_INVALIDARG otherwise).
+// signature declares TEXCOORD0, so the layout must supply it — otherwise
+// CreateInputLayout fails with E_INVALIDARG.
 Skybox_Vertex :: struct {
 	position:  [3]f32,
 	texcoords: [2]f32,

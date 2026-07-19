@@ -122,7 +122,12 @@ convention-agnostic and safe to use from `core:math/linalg`.
 6. **cbuffer packing.** HLSL packs in 16-byte registers: a `float3` then a `float`
    share one; two `float3`s don't. Mirror cbuffers as `struct #align (16)` with
    explicit `_pad: f32` fields where needed, and `ByteWidth` must be a multiple of 16.
-   Getting this wrong silently shears your matrices.
+   Getting this wrong silently shears your matrices. **Odin-specific trap:**
+   `matrix[4,4]f32` has **32-byte** alignment, so a matrix that should sit at byte
+   offset 16 (say, after a `float4`) gets silently pushed to 32 — every field after it
+   is wrong. Declare such a field as `[16]f32` and assign `transmute([16]f32)m`, or
+   order the struct so matrices land on 32-byte boundaries. `#assert(size_of(T) == N)`
+   on every cbuffer struct catches this at compile time.
 
 7. **Swap chain model.** The book era used `DXGI_SWAP_EFFECT_DISCARD` (blit model).
    Use `.FLIP_DISCARD` with `BufferCount = 2` — D3D11 still lets you treat
@@ -147,7 +152,18 @@ convention-agnostic and safe to use from `core:math/linalg`.
 11. **Nothing is bound by default.** Viewport, primitive topology, render targets —
     set them explicitly. A missing `RSSetViewports` is the classic silent black screen.
 
-12. **What not to port.** `ResourceProxyDX11` (int-handle resource + auto-created
+12. **Register assignment is per stage, and reservations count even when unused.**
+    Without explicit `register()` annotations, FXC numbers each stage's cbuffers from
+    b0 independently, in declaration order, skipping ones that stage doesn't use — so
+    the same `Transforms` cbuffer can be b0 in the VS and b1 in the GS. Textures and
+    buffers are worse: an explicit `register(t0)` **reserves** that slot even if the
+    entry point never touches that resource, pushing an unannotated
+    `StructuredBuffer` in the same file to t1. The symptom is a shader that reads
+    zeros with no warning from anything. Hieroglyph3 never hits this because
+    `ParameterManagerDX11` binds by reflection; binding by hand, check the assignments
+    (`fxc /dumpbin`, or reflect via `D3DReflect`) rather than assuming.
+
+13. **What not to port.** `ResourceProxyDX11` (int-handle resource + auto-created
     views), `ParameterManagerDX11` (reflection-driven auto-binding), the `Evt*` event
     system, the scene graph, `ScriptManager` (Lua). Where a sample calls
     `m_pParamMgr->SetWorldMatrixParameter(...)`, you will `Map` a cbuffer and write a
