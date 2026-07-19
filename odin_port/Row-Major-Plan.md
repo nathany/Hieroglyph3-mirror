@@ -86,6 +86,29 @@ edits are safe and `git diff` shows only real changes.
   including one that stated HLSL `ProjMatrix[3][2]` reads Odin `proj[2,3]` —
   under Setup A it reads `proj[3,2]`.
 
+- ✅ immediate_renderer — widest surface. Beyond the matrices, mesh.odin's
+  shape builders rotate vectors on the CPU to place vertices, so the check
+  compared **generated geometry**: 492 cone/disc positions and normals across
+  two axis orientations, all bit-exact, plus the three off-center
+  projections and the circling light. Worth knowing: the C++'s `r * unit`
+  *is* a row-vector product — `Matrix3f::operator*(Vector3f)` sums over rows
+  — so `unit * rot` is the faithful translation despite looking flipped.
+- ✅ skin_and_bones — the densest math, and the last demo. Euler order
+  becomes the engine's `Rz * Rx * Ry` verbatim; `local = R * T` then
+  `world = local * parent` (Transform3D::UpdateLocal/UpdateWorld); and the
+  skin matrix becomes `inv_bind * world`, matching
+  `SkinnedBoneController::GetTransform`'s `m_InvBindPose * WorldMatrix`.
+  Every bone world/skin/normal matrix bit-exact across three actor spins,
+  and an unmoved bone still yields skin == identity exactly. Two
+  `view_proj * world` compositions hid behind a variable name and were found
+  by grepping for `*` in every assignment, not by the type checker.
+
+**Migration complete.** Verification sweep: no app imports `glyph:camera`, no
+plain `matrix[N,N]f32` or linalg matrix builders remain under `apps/`, every
+composition reads world → view → proj, no `m * v` point transforms survive,
+all 15 apps `odin check` clean, the d3d_math suite passes, and the five
+`fp_camera.odin` copies are byte-identical to each other.
+
 Before copying `fp_camera.odin` into the next app, confirm that app's copy
 still matches the *pre-conversion* baseline — `git show <commit-before-water>:
 odin_port/apps/water_simulation/fp_camera.odin`. Comparing against `HEAD`

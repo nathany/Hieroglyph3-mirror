@@ -7,6 +7,7 @@ package main
 
 import "core:math"
 import "core:math/linalg"
+import dm "glyph:d3d_math"
 
 // Mirrors the generator's vertex element order: POSITION, BONEIDS,
 // BONEWEIGHTS, TEXCOORDS, NORMAL — interleaved offsets 0/12/28/44/52,
@@ -117,8 +118,8 @@ Bone :: struct {
 	bind_position: [3]f32,
 	pos_stream:    Anim_Stream,
 	rot_stream:    Anim_Stream,
-	world:         matrix[4, 4]f32,
-	inv_bind:      matrix[4, 4]f32,
+	world:         dm.Matrix4f32,
+	inv_bind:      dm.Matrix4f32,
 }
 
 bones_destroy :: proc(bones: ^[dynamic]Bone) {
@@ -129,29 +130,30 @@ bones_destroy :: proc(bones: ^[dynamic]Bone) {
 	delete(bones^)
 }
 
-// The engine's Euler composition is row-vector Rz*Rx*Ry; column-vector
-// equivalent Ry*Rx*Rz.
+// Matrix4f::RotationMatrixXYZ = Rz * Rx * Ry, the engine's order verbatim.
 @(private = "file")
-euler_rotation :: proc(v: [3]f32) -> matrix[4, 4]f32 {
+euler_rotation :: proc(v: [3]f32) -> dm.Matrix4f32 {
 	return(
-		linalg.matrix4_rotate_f32(v.y, {0, 1, 0}) *
-		linalg.matrix4_rotate_f32(v.x, {1, 0, 0}) *
-		linalg.matrix4_rotate_f32(v.z, {0, 0, 1}) \
+		dm.matrix4_rotate_f32(v.z, {0, 0, 1}) *
+		dm.matrix4_rotate_f32(v.x, {1, 0, 0}) *
+		dm.matrix4_rotate_f32(v.y, {0, 1, 0}) \
 	)
 }
 
 // SkinnedBoneController::Update + the node hierarchy walk: each bone's local
 // transform is translate(bind + animated position) * rotate(animated
 // rotation), chained down from the actor's node world.
-bones_update :: proc(bones: []Bone, parent_world: matrix[4, 4]f32, dt: f32) {
+bones_update :: proc(bones: []Bone, parent_world: dm.Matrix4f32, dt: f32) {
 	for &b, i in bones {
 		anim_update(&b.pos_stream, dt)
 		anim_update(&b.rot_stream, dt)
+		// Transform3D::UpdateLocal sets rotation then translation (row-vector
+		// R * T); UpdateWorld is `m_mWorld = m_mLocal * parent`.
 		local :=
-			linalg.matrix4_translate_f32(b.bind_position + b.pos_stream.current) *
-			euler_rotation(b.rot_stream.current)
+			euler_rotation(b.rot_stream.current) *
+			dm.matrix4_translate_f32(b.bind_position + b.pos_stream.current)
 		parent := parent_world if i == 0 else bones[i - 1].world
-		b.world = parent * local
+		b.world = local * parent
 	}
 }
 
@@ -173,29 +175,28 @@ bones_update :: proc(bones: []Bone, parent_world: matrix[4, 4]f32, dt: f32) {
 bones_set_bind_pose :: proc(bones: []Bone) {
 	bones_update(bones, 1, 0)
 	for &b in bones {
-		b.inv_bind = linalg.inverse(b.world)
+		b.inv_bind = dm.inverse(b.world)
 	}
 }
 
-// SkinnedBoneController::GetTransform / GetNormalTransform, column-vector:
-// skin = world * inv_bind; normal matrix = transpose(inverse(skin)).
+// SkinnedBoneController::GetTransform / GetNormalTransform verbatim:
+// skin = m_InvBindPose * WorldMatrix; normal matrix = transpose(inverse(skin)).
 //
-// Read right to left: inv_bind lifts a vertex out of the bone's bind-pose
+// Read left to right: inv_bind lifts a vertex out of the bone's bind-pose
 // frame into bone-local space, then world puts it back down wherever the
 // bone has animated to. A bone that has not moved yields world == bind, so
 // skin collapses to identity and its vertices sit still — the property the
-// whole scheme rests on. The C++ writes the same product the other way round
-// (m_InvBindPose * WorldMatrix) because the engine is row-vector.
+// whole scheme rests on.
 //
 // The separate normal matrix is the inverse-transpose, needed because the
 // skin matrices are not pure rotations: they translate, and a chain of them
 // can shear, which would tilt normals the wrong way under a plain rotate.
-bone_skin_matrix :: proc(b: ^Bone) -> matrix[4, 4]f32 {
-	return b.world * b.inv_bind
+bone_skin_matrix :: proc(b: ^Bone) -> dm.Matrix4f32 {
+	return b.inv_bind * b.world
 }
 
-bone_skin_normal_matrix :: proc(b: ^Bone) -> matrix[4, 4]f32 {
-	return linalg.transpose(linalg.inverse(bone_skin_matrix(b)))
+bone_skin_normal_matrix :: proc(b: ^Bone) -> dm.Matrix4f32 {
+	return linalg.transpose(dm.inverse(bone_skin_matrix(b)))
 }
 
 bones_play_all :: proc(bones: []Bone) {

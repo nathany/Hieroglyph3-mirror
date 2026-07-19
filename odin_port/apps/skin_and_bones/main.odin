@@ -32,7 +32,7 @@ import "core:math/linalg"
 import "core:time"
 import win32 "core:sys/windows"
 import d3d11 "vendor:directx/d3d11"
-import "glyph:camera"
+import dm "glyph:d3d_math"
 import "glyph:ms3d"
 import "glyph:renderer"
 import "glyph:shader"
@@ -50,10 +50,10 @@ NUM_BONES :: 6
 // tessellated VS leaves the position in world space so the HS/DS can subdivide
 // and displace it, and the DS applies ViewProjMatrix last.
 Skinning_Transforms :: struct #align (16) {
-	world:                matrix[4, 4]f32,
-	view_proj:            matrix[4, 4]f32,
-	skin_matrices:        [NUM_BONES]matrix[4, 4]f32,
-	skin_normal_matrices: [NUM_BONES]matrix[4, 4]f32,
+	world:                dm.Matrix4f32,
+	view_proj:            dm.Matrix4f32,
+	skin_matrices:        [NUM_BONES]dm.Matrix4f32,
+	skin_normal_matrices: [NUM_BONES]dm.Matrix4f32,
 }
 
 // LightParameters: float3 + float4 pack into two 16-byte registers.
@@ -65,13 +65,13 @@ Light_Parameters :: struct #align (16) {
 
 // MeshStaticTextured.hlsl's StaticMeshTransforms cbuffer.
 Static_Transforms :: struct #align (16) {
-	world:           matrix[4, 4]f32,
-	world_view_proj: matrix[4, 4]f32,
+	world:           dm.Matrix4f32,
+	world_view_proj: dm.Matrix4f32,
 }
 
 // VertexColor.hlsl's Transforms cbuffer (the axis gizmos).
 Axis_Transforms :: struct #align (16) {
-	world_view_proj: matrix[4, 4]f32,
+	world_view_proj: dm.Matrix4f32,
 }
 
 App_State :: struct {
@@ -338,7 +338,7 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 }
 
 // Draw the axis gizmos for one bone chain.
-draw_bone_axes :: proc(ctx: ^d3d11.IDeviceContext, s: ^Scene, bones: []Bone, view_proj: matrix[4, 4]f32) {
+draw_bone_axes :: proc(ctx: ^d3d11.IDeviceContext, s: ^Scene, bones: []Bone, view_proj: dm.Matrix4f32) {
 	ctx->IASetInputLayout(s.axis_layout)
 	stride: u32 = size_of(Axis_Vertex)
 	offset: u32 = 0
@@ -352,7 +352,7 @@ draw_bone_axes :: proc(ctx: ^d3d11.IDeviceContext, s: ^Scene, bones: []Bone, vie
 
 	for &b in bones {
 		transforms := Axis_Transforms {
-			world_view_proj = view_proj * b.world,
+			world_view_proj = b.world * view_proj,
 		}
 		write_cbuffer(ctx, s.cb_axis, &transforms)
 		ctx->DrawIndexed(u32(len(axis_indices)), 0, 0)
@@ -411,10 +411,10 @@ main :: proc() {
 
 	// RenderApplication camera: pitch 0.7 at (0,50,-20); proj pi/4,
 	// 0.1..1000. The camera is static in this sample.
-	cam_rotation := linalg.matrix4_rotate_f32(f32(0.7), [3]f32{1, 0, 0})
-	view := linalg.transpose(cam_rotation) * linalg.matrix4_translate_f32([3]f32{0, -50, 20})
-	proj := camera.perspective_fov_lh(math.PI / 4, f32(WIDTH) / f32(HEIGHT), 0.1, 1000.0)
-	view_proj := proj * view
+	cam_rotation := dm.matrix4_rotate_f32(f32(0.7), [3]f32{1, 0, 0})
+	view := dm.matrix4_translate_f32([3]f32{0, -50, 20}) * linalg.transpose(cam_rotation)
+	proj := dm.perspective_fov_lh(math.PI / 4, f32(WIDTH) / f32(HEIGHT), 0.1, 1000.0)
+	view_proj := view * proj
 
 	ctx := r.ctx
 	start := time.tick_now()
@@ -445,9 +445,9 @@ main :: proc() {
 
 		// The default RotationControllers: 0.25 rad/s about +Y on each actor.
 		spin := runtime_s * 0.25
-		displaced_node := linalg.matrix4_translate_f32([3]f32{20, 0, 20}) * linalg.matrix4_rotate_f32(spin, [3]f32{0, 1, 0})
-		skinned_node := linalg.matrix4_translate_f32([3]f32{0, 0, 20}) * linalg.matrix4_rotate_f32(spin, [3]f32{0, 1, 0})
-		static_world := linalg.matrix4_translate_f32([3]f32{-20, 10, 15}) * linalg.matrix4_rotate_f32(spin, [3]f32{0, 1, 0})
+		displaced_node := dm.matrix4_rotate_f32(spin, [3]f32{0, 1, 0}) * dm.matrix4_translate_f32([3]f32{20, 0, 20})
+		skinned_node := dm.matrix4_rotate_f32(spin, [3]f32{0, 1, 0}) * dm.matrix4_translate_f32([3]f32{0, 0, 20})
+		static_world := dm.matrix4_rotate_f32(spin, [3]f32{0, 1, 0}) * dm.matrix4_translate_f32([3]f32{-20, 10, 15})
 
 		// Each actor drives its own chain because the node matrix is the root
 		// of the bone hierarchy, not a separate world transform applied
@@ -467,7 +467,7 @@ main :: proc() {
 		}
 		write_cbuffer(ctx, scene.cb_light, &light)
 
-		fill_skinning :: proc(bones: []Bone, world: matrix[4, 4]f32, view_proj: matrix[4, 4]f32) -> Skinning_Transforms {
+		fill_skinning :: proc(bones: []Bone, world: dm.Matrix4f32, view_proj: dm.Matrix4f32) -> Skinning_Transforms {
 			t := Skinning_Transforms {
 				world     = world,
 				view_proj = view_proj,
@@ -539,7 +539,7 @@ main :: proc() {
 		// --- Static box ---------------------------------------------------
 		static_transforms := Static_Transforms {
 			world           = static_world,
-			world_view_proj = view_proj * static_world,
+			world_view_proj = static_world * view_proj,
 		}
 		write_cbuffer(ctx, scene.cb_static, &static_transforms)
 
