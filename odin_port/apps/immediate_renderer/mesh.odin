@@ -11,6 +11,7 @@ package main
 import "core:math"
 import "core:math/linalg"
 import d3d11 "vendor:directx/d3d11"
+import dm "glyph:d3d_math"
 
 // Mirrors BasicVertexDX11::Vertex: POSITION, NORMAL, COLOR, TEXCOORD with
 // appended offsets (0/12/24/40, stride 48).
@@ -243,13 +244,17 @@ draw_cylinder :: proc(m: ^Immediate_Mesh, p1, p2: [3]f32, r1, r2: f32, stacks: u
 	tessellate_tri_grid(m, max(stacks, 2), max(slices, 4), 2 * math.PI, 1.0,
 		proc(user: rawptr, theta, h: f32) -> (position, normal: [3]f32, tex: [2]f32) {
 			c := (^Cone_Model)(user)
-			rot := linalg.matrix3_rotate_f32(theta, c.vnorm)
+			rot := dm.matrix3_rotate_f32(theta, c.vnorm)
 			radius := c.r2 + (c.r1 - c.r2) * h
-			position = c.p2 + c.vnorm * c.height * h + rot * c.unit * radius
+			// Row-vector `unit * rot`, which is what the C++'s `r * unit`
+			// actually computes: Matrix3f::operator*(Vector3f) sums over
+			// rows (m[iRow][iCol] * v[iRow]), so it is a row-vector product
+			// despite reading matrix-first.
+			position = c.p2 + c.vnorm * c.height * h + c.unit * rot * radius
 			// Tilt the radial direction back along the axis by the taper
 			// slope (r1-r2)/height; for a plain cylinder slope is 0 and the
 			// normal stays purely radial.
-			normal = linalg.normalize(rot * c.unit - c.vnorm * c.slope)
+			normal = linalg.normalize(c.unit * rot - c.vnorm * c.slope)
 			// TexcoordsFromCone: (height, theta) with theta left in raw
 			// radians, not divided by 2pi — preserved from the C++, and
 			// invisible here since these shapes use the vertex-color material.
@@ -281,8 +286,8 @@ draw_disc :: proc(m: ^Immediate_Mesh, center, normal: [3]f32, radius: f32, slice
 
 	for slice in 0 ..= slices {
 		theta := slice_step * f32(slice)
-		rot := linalg.matrix3_rotate_f32(theta, vnorm)
-		add_vertex_normal(m, center + rot * unit * radius, vnorm)
+		rot := dm.matrix3_rotate_f32(theta, vnorm)
+		add_vertex_normal(m, center + unit * rot * radius, vnorm)
 	}
 
 	// The fan reaches base+slices+1, in range only because the rim loop emits

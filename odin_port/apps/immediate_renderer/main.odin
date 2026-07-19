@@ -34,7 +34,7 @@ import "core:math/linalg"
 import "core:time"
 import win32 "core:sys/windows"
 import d3d11 "vendor:directx/d3d11"
-import "glyph:camera"
+import dm "glyph:d3d_math"
 import "glyph:renderer"
 import "glyph:shader"
 import "glyph:window"
@@ -44,14 +44,13 @@ HEIGHT :: 600
 
 // --- cbuffer mirrors ---------------------------------------------------------
 
-// The book's shaders are row-vector HLSL (`mul(v, M)`), but these are
-// column-vector Odin matrices. No transpose is needed: glyph:shader compiles
-// with D3DCOMPILE_PACK_MATRIX_ROW_MAJOR, so HLSL reads the column-major
-// bytes as M-transposed and the two conventions cancel. Hence the natural
-// `proj * view * world` in draw_object.
+// Row-vector matrices (glyph:d3d_math) in #row_major fields, matching the
+// row-vector HLSL (`mul(v, M)`) and glyph:shader's
+// D3DCOMPILE_PACK_MATRIX_ROW_MAJOR packing — so the shader sees each matrix
+// as built, and draw_object composes `world * view * proj` like the book.
 World_Transforms :: struct #align (16) {
-	world:           matrix[4, 4]f32,
-	world_view_proj: matrix[4, 4]f32,
+	world:           dm.Matrix4f32,
+	world_view_proj: dm.Matrix4f32,
 }
 
 Point_Light_Info :: struct #align (16) {
@@ -75,8 +74,8 @@ Pbr_Material :: struct #align (16) {
 }
 
 Skybox_Data :: struct #align (16) {
-	view:          matrix[4, 4]f32,
-	proj:          matrix[4, 4]f32,
+	view:          dm.Matrix4f32,
+	proj:          dm.Matrix4f32,
 	view_position: [4]f32,
 }
 
@@ -173,8 +172,8 @@ Scene_Object :: struct {
 	material_params: Pbr_Material,
 }
 
-object_world_matrix :: proc(o: ^Scene_Object, t: f32) -> matrix[4, 4]f32 {
-	return linalg.matrix4_translate_f32(o.position) * linalg.matrix4_rotate_f32(o.spin_rate * t, {0, 1, 0})
+object_world_matrix :: proc(o: ^Scene_Object, t: f32) -> dm.Matrix4f32 {
+	return dm.matrix4_rotate_f32(o.spin_rate * t, {0, 1, 0}) * dm.matrix4_translate_f32(o.position)
 }
 
 Pipeline :: struct {
@@ -510,7 +509,7 @@ draw_object :: proc(
 	ctx: ^d3d11.IDeviceContext,
 	p: ^Pipeline,
 	o: ^Scene_Object,
-	view, proj: matrix[4, 4]f32,
+	view, proj: dm.Matrix4f32,
 	t: f32,
 ) {
 	// An empty mesh is a legitimate state, not an error — a missing model file
@@ -523,7 +522,7 @@ draw_object :: proc(
 	world := object_world_matrix(o, t)
 	transforms := World_Transforms {
 		world           = world,
-		world_view_proj = proj * view * world,
+		world_view_proj = world * view * proj,
 	}
 	write_cbuffer(ctx, p.cb_world, &transforms)
 	write_cbuffer(ctx, p.cb_material, &o.material_params)
@@ -601,7 +600,7 @@ main :: proc() {
 		pitch    = 0.5,
 		yaw      = 0.3,
 	}
-	proj := camera.perspective_fov_lh(math.PI / 4, f32(WIDTH) / f32(HEIGHT), 0.1, 1000.0)
+	proj := dm.perspective_fov_lh(math.PI / 4, f32(WIDTH) / f32(HEIGHT), 0.1, 1000.0)
 
 	ctx := r.ctx
 	start := time.tick_now()
@@ -631,7 +630,7 @@ main :: proc() {
 		if state.pending_resize != {0, 0} {
 			renderer.resize(&r, state.pending_resize.x, state.pending_resize.y)
 			state.pending_resize = {0, 0}
-			proj = camera.perspective_fov_lh(math.PI / 4, f32(r.width) / f32(r.height), 0.1, 1000.0)
+			proj = dm.perspective_fov_lh(math.PI / 4, f32(r.width) / f32(r.height), 0.1, 1000.0)
 		}
 
 		// App::HandleEvent keys 1/2/3: off-center projections. These specify
@@ -643,11 +642,11 @@ main :: proc() {
 		if state.projection_key != 0 {
 			switch state.projection_key {
 			case '1':
-				proj = camera.perspective_off_center_lh(-0.4, 0.4, -0.3, 0.3, 0.5, 100.0)
+				proj = dm.perspective_off_center_lh(-0.4, 0.4, -0.3, 0.3, 0.5, 100.0)
 			case '2':
-				proj = camera.perspective_off_center_lh(0.0, 0.8, -0.3, 0.3, 0.5, 100.0)
+				proj = dm.perspective_off_center_lh(0.0, 0.8, -0.3, 0.3, 0.5, 100.0)
 			case '3':
-				proj = camera.perspective_off_center_lh(-0.8, 0.0, -0.3, 0.3, 0.5, 100.0)
+				proj = dm.perspective_off_center_lh(-0.8, 0.0, -0.3, 0.3, 0.5, 100.0)
 			}
 			state.projection_key = 0
 		}
@@ -660,7 +659,7 @@ main :: proc() {
 		// (0,50,0) with the light body offset to (50,0,0) — into one
 		// rotate-then-translate.
 		light_angle := -runtime_s
-		light_pos_3 := linalg.matrix3_rotate_f32(light_angle, [3]f32{0, 1, 0}) * [3]f32{50, 0, 0} + {0, 50, 0}
+		light_pos_3 := [3]f32{50, 0, 0} * dm.matrix3_rotate_f32(light_angle, [3]f32{0, 1, 0}) + {0, 50, 0}
 
 		rebuild_grid(&grid.mesh, runtime_s)
 
