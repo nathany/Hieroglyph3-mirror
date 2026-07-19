@@ -1,0 +1,9 @@
+# The Odin port is LF-only, regardless of anyone's core.autocrlf. The
+# surrounding C++ mirror keeps its own (mostly CRLF) endings — this file is
+# scoped to odin_port/ deliberately so it never touches that tree.
+#
+# Why it matters: stream edits (sed -i, perl -pi) rewrite a whole file with
+# LF, so a stray CRLF file turns an 8-line change into an every-line diff
+# and hides the real edit.
+*.odin text eol=lf
+*.md   text eol=lf

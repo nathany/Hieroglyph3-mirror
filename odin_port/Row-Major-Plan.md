@@ -41,12 +41,11 @@ composed products — so the rendered output is unchanged.
 5. **Rewrite the convention comments** in the file (they currently explain
    the column-vector cancellation; see the sweep list below).
 
-**Gotcha when scripting the swaps:** `sed -i` rewrites the whole file with LF
-endings. Three files are stored CRLF — `apps/basic_tessellation/main.odin`,
-`apps/curved_pn_triangles/ply.odin`, `glyph/ms3d/ms3d.odin` — and a converted
-one shows up as an every-line diff. Check with `file`, restore with
-`perl -pi -e 's/(?<!\r)\n/\r\n/'`, and confirm `git diff --stat` shows only
-the real lines.
+**Line endings:** every `.odin` file is LF, enforced by `odin_port/.gitattributes`
+(scoped to this directory — the C++ mirror keeps its own CRLF). This was
+settled after a `sed -i` pass silently converted the one remaining CRLF file
+and turned an 8-line change into an every-line diff. With that fixed, stream
+edits are safe and `git diff` shows only real changes.
 
 ## Progress
 
