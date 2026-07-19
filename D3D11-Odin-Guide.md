@@ -49,90 +49,106 @@ Odin has first-class matrix types (`matrix[4,4]f32`) with these defaults:
 - **Column-vector math** in `core:math/linalg`: `v' = M * v`, so a world-view-projection
   composes as `P * V * W`.
 
-The book's HLSL, meanwhile, is written **row-vector style** — `mul(v, M)` — as was
-standard in the D3D world (see `Applications/Data/Shaders/RotatingCube.hlsl`). And HLSL
-cbuffers default to **column-major packing**. There are two coherent ways to make these
-agree; pick one and never mix:
+The book's C++ (`Matrix4f`) and its HLSL are both **row-vector**: vertices transform
+as `v * M` / `mul(v, M)`, chains compose left-to-right (`World * View * Proj`), and
+translation sits in the bottom row of every matrix the book prints. So there are two
+mismatches to manage — convention (row- vs column-vector) and, at the cbuffer
+boundary, packing. The packing half reduces to one rule:
 
-**Setup A — compile with row-major packing (recommended; what the port does).**
-Pass `D3DCOMPILE_PACK_MATRIX_ROW_MAJOR` on every compile, exactly as the engine's
-`ShaderFactoryDX11` does, and declare cbuffer-mirror fields as *plain* matrices:
+> **The packing rule:** the shader sees your matrix *transposed* exactly when the
+> Odin field's storage (column-major default vs `#row_major`) differs from the HLSL
+> packing mode (column-major default vs the `D3DCOMPILE_PACK_MATRIX_ROW_MAJOR`
+> compile flag). Match the two and the shader sees the matrix you built, as-is.
+
+**Setup A — row-vector + `#row_major`, matching the book (recommended).** Keep the
+engine's compile flag (`ShaderFactoryDX11` passes `PACK_MATRIX_ROW_MAJOR`;
+`glyph:shader` does the same), declare matrices `#row_major`, and build them with the
+row-vector builders in `odin_port/glyph/d3d_math` (~10 procs, linalg naming):
 
 ```odin
+import dm "glyph:d3d_math"
+
 Constants :: struct #align (16) {
-    world_view_proj: matrix[4,4]f32,   // plain — NOT #row_major
+    world_view_proj: dm.Matrix4f32,   // = #row_major matrix[4,4]f32
 }
-// build the matrix the natural linalg way (column-vector convention):
-constants.world_view_proj = proj * view * world   // uploaded as-is
+world := dm.matrix4_rotate_f32(angle, {0, 1, 0}) * dm.matrix4_translate_f32(pos)
+constants.world_view_proj = world * view * proj   // the book's order, uploaded as-is
 ```
 
-Why it works: the flag makes HLSL read cbuffer matrix memory as the matrix's *rows*.
-An Odin `matrix[4,4]f32` holding a column-vector-convention M stores M's columns,
-which HLSL then reads as rows — so the shader sees Mᵀ, and `mul(v, Mᵀ) = (M·v)ᵀ`,
-exactly what the row-vector shader needs. Result: **no transposes anywhere, no shader
-edits, and matrix composition stays the readable `P * V * W`.**
+Everything now reads like the book: composition order, the printed matrix layouts,
+`pos * world` ↔ the shader's `mul(pos, WorldMatrix)`, and even literal indexing —
+HLSL `ProjMatrix[3][2]` is Odin `proj[3, 2]`. Storage and packing are both
+row-major, so by the packing rule the shader sees exactly what you built; no
+transposes anywhere. Two safety properties come free: `#row_major matrix[4,4]f32`
+is a **distinct type**, so passing a column-vector linalg matrix by mistake is a
+compile error rather than a silent shear; and there is no SIMD penalty (measured on
+`dev-2026-07`: matrix×matrix codegen is instruction-identical to column-major, and
+`v * M` auto-vectorizes well).
 
-**Do not also mark the field `#row_major`.** Holding a column-vector matrix, the flag
-and the annotation each transpose once, so together they cancel and you are back to a
-sheared matrix. They are alternatives here, not complements: `#row_major` + HLSL's
-*default* packing gets you to the same place, and earlier drafts of this guide
-recommended exactly that. The compile flag is preferred for two practical reasons —
-it's what `ShaderFactoryDX11` passes, so the book's shaders compile under the same
-rules as the book's own build; and it's set once globally, where `#row_major` must be
-repeated on every matrix field of every cbuffer struct and shears silently if one is
-missed.
+### Cheat sheet: book / C++ → Odin
 
-**Reading this port against the book's C++.** The convention difference is CPU-side
-notation only — for the same transform, the port's matrix is the *transpose* of the
-book's as a logical object, but stored column-major it produces **byte-identical
-cbuffer contents** to the C++'s row-major upload. The GPU cannot tell the two
-codebases apart; every difference below is in how the source reads:
+| Book / C++ (`Matrix4f`, DirectXMath) | Odin (Setup A) |
+|---|---|
+| `World * View * Proj` | `world * view * proj` — same order |
+| `v * M` | `v * m` — built-in, `[4]f32 * dm.Matrix4f32` |
+| `RotationMatrixX/Y/Z(a)` | `dm.matrix4_rotate_f32(a, {1,0,0}` / `{0,1,0}` / `{0,0,1})` |
+| `TranslationMatrix(x, y, z)` | `dm.matrix4_translate_f32({x, y, z})` |
+| `XMMatrixScaling(x, y, z)` | `dm.matrix4_scale_f32({x, y, z})` |
+| `PerspectiveFovLHMatrix(fov, aspect, n, f)` | `dm.perspective_fov_lh(fov, aspect, n, f)` |
+| `LookAtLHMatrix(eye, at, up)` | `dm.look_at_lh(eye, at, up)` |
+| `M.Inverse()` | `dm.inverse(m)` |
+| `M.Transpose()` | `linalg.transpose(m)` — accepts `#row_major` |
+| transform a point (`XMVector3TransformCoord`) | `([4]f32{p.x, p.y, p.z, 1} * m).xyz` |
+| `Vector3f` Normalize / Cross / Dot | `linalg.normalize` / `cross` / `dot` — arrays, convention-free |
+| cbuffer matrix field | `dm.Matrix4f32` (+ the compile flag) |
+| element access — translation x at `m[3][0]` | `m[3, 0]` — same position |
+| HLSL `M[i][j]` | `m[i, j]` — same position |
 
-| | Book / Hieroglyph3 (`Matrix4f`) | This port (`core:math/linalg`) |
+**The camera-function trap.** Don't reach for `linalg.matrix4_perspective` /
+`matrix4_look_at`: they are **OpenGL-convention** — perspective maps depth to −1..1
+(D3D needs 0..1) and look_at is −Z-forward. Your cube will be depth-clipped into
+oblivion. The LH 0..1-depth versions live in the repo already: row-vector in
+`glyph:d3d_math` (ports of `Matrix4f::PerspectiveFovLHMatrix` / `LookAtLHMatrix`),
+column-vector twins in `glyph:camera`.
+
+Vector operations (`normalize`, `cross`, `dot`, `lerp`, `length`) and `transpose`
+are convention-agnostic — use linalg's freely in either setup. Matrix *builders*
+always carry a convention: take them from `d3d_math` (row-vector) or linalg
+(column-vector), never both in one program — the distinct types enforce this.
+
+### Addendum — the column-vector alternative (what `odin_port`'s demos use)
+
+The 15 ported demos predate Setup A: they use plain `matrix[4,4]f32` fields and
+linalg's column-vector builders, with the same compile flag. Storage (column-major)
+then *differs* from packing (row-major), so by the packing rule the shader sees the
+transpose — which is exactly what `mul(v, M)` needs, because the column-vector
+matrix for a transform *is* the book's matrix transposed. Equally coherent, zero
+transposes, full use of linalg; the cost is that every line of matrix math reads
+mirrored against the book:
+
+| | Book / Hieroglyph3 (`Matrix4f`) | Column-vector Odin (`core:math/linalg`) |
 |---|---|---|
 | Convention | row-vector: `v * M` | column-vector: `M * v` |
 | Composition | `World * View * Proj` | `proj * view * world` — same chain, mirrored |
 | Translation sits in | bottom row: `m[3][0..2]` | last column: `m[0..2, 3]` |
 | CPU storage | row-major | column-major |
 | Transposes written | none | none |
-| Bytes uploaded | *identical* | *identical* |
+| Bytes uploaded | identical — bit-exact for single matrices; composed products agree to last-bit rounding (~1e-7) | ← |
 
-So when the book prints a matrix layout or composes a chain, apply one mechanical
-rule: **transpose the picture, mirror the order**. Nothing else changes — and no
-`transpose()` call ever appears in either codebase, because the row-major compile
-flag and Odin's column-major storage cancel exactly.
+Reading rule: **transpose the picture, mirror the order** — including *within*
+chains (the C++'s `RotationMatrixY(a) * RotationMatrixX(b)` is
+`rotate_x(b) * rotate_y(a)` here) and in shaders that index literally
+(`LightsLP.hlsl`'s `ProjMatrix[3][2]` reads Odin's `proj[2,3]`).
 
-Two places the mirror actually bites:
+Mind the packing rule when mixing pieces of the two setups: a column-vector matrix
+in a `#row_major` field hands the shader an *un*-transposed matrix — wrong for
+`mul(v, M)`, and it shears silently. (Column-vector + `#row_major` + *default*
+packing is coherent — earlier drafts of this guide recommended it — but then the
+compile flag must go.)
 
-- A shader indexing a matrix by literal row/column sees the transpose:
-  `LightsLP.hlsl`'s `ProjMatrix[3][2]` reads Odin's `proj[2,3]`.
-- Non-commutative composition reverses *within* a chain too: the C++'s
-  `RotationMatrixY(a) * RotationMatrixX(b)` (Y applied first) is
-  `rotate_x(b) * rotate_y(a)` here.
-
-Matching the book's notation exactly would mean hand-rolling row-vector replacements
-for `matrix4_rotate`/`translate`/`scale` (with `#row_major` fields as the matching
-storage half) and never mixing in a linalg builder by accident — a silent-shear
-hazard on every future line. This port deliberately doesn't; read mirrored instead.
-
-**Setup B — the official example's way.** Use default (column-major) matrices and
-write/edit shaders to column-vector style: `mul(projection, mul(world, v))`. Also zero
-transposes, but every book shader needs its `mul` arguments flipped. Fine if you prefer
-your HLSL in modern column-vector style; more editing.
-
-**The camera-function trap.** Don't reach for `linalg.matrix4_perspective` /
-`matrix4_look_at`: they are **OpenGL-convention** — perspective maps depth to −1..1
-(D3D needs 0..1) and look_at is −Z-forward. Your cube will be depth-clipped into
-oblivion. Instead, write your own two LH helpers once, in a `camera.odin`:
-
-- Port `Matrix4f::PerspectiveFovLHMatrix` and `Matrix4f::LookAtLHMatrix` from
-  `Source/Matrix4f.cpp` — they're ~20 lines each and are the exact convention the
-  book's demos use, or
-- crib the hand-rolled 0..1-depth projection in the official Odin example (it does the
-  same thing for the same reason).
-
-Everything else (rotations, translations, `linalg.mul`, `transpose`, vector ops) is
-convention-agnostic and safe to use from `core:math/linalg`.
+A third route — column-vector everything and edit each shader to `mul(M, v)` — also
+works (it's what the official Odin D3D11 example does), but gives up running the
+book's shaders unchanged.
 
 ---
 
@@ -296,8 +312,8 @@ depth-stencil state.
 **Odin deliverable:** port **RotatingCube** — the book's real "first render". Vertex +
 index buffer for a cube, input layout, VS/PS from `RotatingCube.hlsl` **unchanged**
 (this is where Setup A pays off), a cbuffer struct with `#row_major` world/view/proj
-fields, depth buffer on, per-frame rotation via `linalg.matrix4_rotate_f32`, camera
-from your hand-rolled LH helpers. The C++ sample also runs a geometry shader; treat
+fields, depth buffer on, per-frame rotation via `d3d_math.matrix4_rotate_f32`, camera
+from `d3d_math`'s LH helpers. The C++ sample also runs a geometry shader; treat
 that as an optional second pass once the cube spins (it demonstrates the stage; the
 cube doesn't need it).
 

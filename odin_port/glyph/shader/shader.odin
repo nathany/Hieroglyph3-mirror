@@ -1,19 +1,22 @@
 // Runtime HLSL compilation mirroring ShaderFactoryDX11::GenerateShader
 // (Source/ShaderFactoryDX11.cpp).
 //
-// The matrix story, settled once: like the engine, everything compiles with
+// The matrix story: like the engine, everything compiles with
 // D3DCOMPILE_PACK_MATRIX_ROW_MAJOR, so HLSL reads cbuffer matrix memory as
-// the matrix's ROWS. An Odin `matrix[4,4]f32` holding a column-vector-
-// convention matrix M stores M's columns — which HLSL then reads as rows,
-// i.e. it sees M-transposed, which is exactly what the book's row-vector
-// `mul(v, M)` shaders need. Net result: plain Odin matrices, natural
-// `proj * view * world` composition, zero transposes, book shaders
-// unchanged.
+// the matrix's ROWS. The packing rule (see the guide's Matrices section):
+// the shader sees your matrix transposed exactly when the Odin field's
+// storage layout differs from this packing mode. Both conventions work with
+// the flag — they just need matching field layouts:
 //
-// NOTE: this supersedes the guide's "Setup A" (#row_major fields): that
-// trick assumes HLSL's *default* column-major packing. With the engine's
-// row-major compile flag adopted here, cbuffer fields must be plain
-// `matrix[4,4]f32` — adding #row_major on top would transpose twice.
+//   - column-vector matrices (core:math/linalg — what these demos use) go
+//     in PLAIN `matrix[4,4]f32` fields: column storage read as rows hands
+//     the shader Mᵀ, which is what row-vector `mul(v, M)` needs. See the
+//     guide's addendum.
+//   - row-vector matrices (glyph:d3d_math — the guide's Setup A) go in
+//     `#row_major` fields: matching layouts hand the shader M as built.
+//
+// Mixing the pairings ships a wrongly-transposed matrix and shears
+// silently; the distinct #row_major type keeps the builders apart.
 //
 // Shaders are found on disk at runtime, straight from the repository's
 // Applications/Data/Shaders/ — the same files the C++ demos compile.
