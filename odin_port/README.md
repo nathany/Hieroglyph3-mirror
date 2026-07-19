@@ -60,6 +60,7 @@ source location, so lookup doesn't depend on the working directory.
 | `interlocking_terrain_tiles` | Applications/InterlockingTerrainTiles | 9 | ✅ LOD terrain, W/L/D/A controls (no text) |
 | `light_prepass` | Applications/LightPrepass | 11 | ✅ MSAA deferred lighting, N cycles light count (no text) |
 | `deferred_rendering` | Applications/DeferredRendering | 11 | ✅ V/N/K/O/M toggles (no text) |
+| `water_simulation` | Applications/WaterSimulationI | 12 | ✅ CS water sim on wireframe heightmap (no text) |
 
 ### basic_window
 
@@ -224,6 +225,27 @@ Preserved quirk: the shader's `CameraPos` is filled from the scene root's
 position (the origin), not the camera, so the unoptimized path's specular
 is subtly wrong in the original too. The engine's SpriteRenderer display
 blit is replaced by an inline alpha-blended pixel-rect blit shader.
+
+### water_simulation
+
+Chapter 12's compute-shader water simulation. A 256×256 grid of water
+columns (height + four neighbor outflows) ping-pongs between two structured
+buffers: each frame `WaterSimulation.hlsl` runs as 16×16 groups of 18×18
+threads (16×16 plus a one-texel perimeter staged through group shared
+memory), integrating the pipe-model flows and heights, then the buffers swap
+roles. `HeightmapVisualization.hlsl` draws a 256×256-vertex plane in
+wireframe, with the VS fetching each vertex's height straight from the water
+state buffer (t0) and coloring alternate thread-group tiles green/blue. The
+initial state is a sinc-shaped splash (amplitude 40) centered at grid
+(32, 96) that ripples outward and reflects off the edges; the plane spins at
+0.2 rad/s. FPS lives in the title bar. Faithful frame-rate dependence: the
+time step is elapsed-time driven (doubled by the app, clamped to 0.05) but
+the damping factor 0.9995 applies **per iteration**, so at uncapped
+thousands of FPS the waves flatten within a couple of seconds — the C++
+behaves the same way, just at its own frame rate. The camera start
+(-100, 40.5, -120) is the app's body transform *plus* the engine's default
+camera node at (0, 10, -20). The C++'s unused "FinalColor" parameter is
+omitted.
 
 ### immediate_renderer
 
