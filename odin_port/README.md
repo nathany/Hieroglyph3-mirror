@@ -59,6 +59,7 @@ source location, so lookup doesn't depend on the working directory.
 | `curved_pn_triangles` | Applications/CurvedPointNormalTriangles | 9 | ✅ orbiting camera, W/A/± controls (no text) |
 | `interlocking_terrain_tiles` | Applications/InterlockingTerrainTiles | 9 | ✅ LOD terrain, W/L/D/A controls (no text) |
 | `light_prepass` | Applications/LightPrepass | 11 | ✅ MSAA deferred lighting, N cycles light count (no text) |
+| `deferred_rendering` | Applications/DeferredRendering | 11 | ✅ V/N/K/O/M toggles (no text) |
 
 ### basic_window
 
@@ -200,6 +201,29 @@ Lengyel method). **N** cycles 3x3x3/5x5x5/7x7x7 point-light grids
 (red-to-cyan color lerp — shown in the title bar), first-person camera as
 usual, live resize recreates all five render targets. The C++ compiles
 spot/directional light shaders it never draws; those are omitted.
+
+### deferred_rendering
+
+Chapter 11's classic deferred renderer, with the book's full optimization
+matrix in the title bar. The G-Buffer pass fills 4 fat MRTs
+(**K** off: world-space normal / diffuse / specular / position, all
+RGBA32F) or 3 slim ones (**K** on: spheremap-encoded view-space normal
+R16G16_SNORM, R10G10B10A2 diffuse, R8G8B8A8 specular — position
+reconstructed from depth). Each point light then accumulates additively
+into the final target, stencil-masked to geometry; **O** picks fullscreen
+quad, scissor-rectangle, or sphere light volumes (LESS_EQUAL/back-face,
+flipping to GREATER_EQUAL/front-face when the volume crosses the far
+plane). **V** cycles what's displayed (final image, the G-Buffer attributes
+singly, or all four in quadrants — hardcoded for 1280x720 in the C++, so
+partly off-screen at 800x480, preserved). **N** cycles the light grid,
+**M** the AA mode: none, 2x supersampling (all targets at 1600x960), or 4x
+MSAA with an SV_Coverage per-sample loop (G-Buffer views are unavailable
+under MSAA — the C++ shows a text message, here the screen stays black).
+Startup state matches AppSettings.cpp: optimizations + light volumes on.
+Preserved quirk: the shader's `CameraPos` is filled from the scene root's
+position (the origin), not the camera, so the unoptimized path's specular
+is subtly wrong in the original too. The engine's SpriteRenderer display
+blit is replaced by an inline alpha-blended pixel-rect blit shader.
 
 ### immediate_renderer
 
