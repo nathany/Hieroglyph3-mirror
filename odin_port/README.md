@@ -40,6 +40,12 @@ Data files (shaders, textures, models) load from the repo's
 `../Applications/Data` tree — the path is baked in at compile time from the
 source location, so lookup doesn't depend on the working directory.
 
+The math helpers in `glyph:d3d_math` have a test suite:
+
+```
+odin test glyph\d3d_math -collection:glyph=glyph
+```
+
 ## Applications
 
 | App | C++ original | Book chapter | Status |
@@ -88,12 +94,13 @@ The book's first real render (640×480): an indexed color cube spun by a
 world matrix rebuilt each frame, drawn VS → GS → PS with
 `RotatingCube.hlsl` unchanged. The geometry shader — not the vertex shader —
 applies `WorldViewProjMatrix` and "blows up" each face along its normal, so
-the cbuffer binds to the GS stage only. Matrix handling: shaders compile with
-`D3DCOMPILE_PACK_MATRIX_ROW_MAJOR` (as the engine's `ShaderFactoryDX11`
-does), so plain `matrix[4,4]f32` fields compose naturally
-(`proj * view * world`) with zero transposes — see the note in
-`glyph/shader/shader.odin` for why `#row_major` must *not* be combined with
-the compile flag. Camera via `glyph:camera`'s hand-rolled LH 0..1-depth
+the cbuffer binds to the GS stage only. Matrix handling: row-vector matrices
+from `glyph:d3d_math` in `#row_major` fields, matching the
+`D3DCOMPILE_PACK_MATRIX_ROW_MAJOR` packing the engine's `ShaderFactoryDX11`
+uses — so the math reads like the C++ line-for-line
+(`RotationMatrixY(t) * RotationMatrixX(t)`, then `World * View * Proj`) and
+uploads with zero transposes; see the note in `glyph/shader/shader.odin`.
+Camera via `glyph:d3d_math`'s hand-rolled LH 0..1-depth
 helpers (core:math/linalg's are GL-convention). The window and screenshot
 prefix say "BasicApplication" because the C++ `GetName()` does — a
 copy-paste quirk in the original, preserved.
