@@ -25,7 +25,7 @@ matrix to manage:
 | Shader compilation | `vendor:directx/d3d_compiler` | FXC, Shader Model 5.0 — same as the book. `vendor:directx/dxc` exists but isn't needed until DX12/SM6. |
 | Win32 API | `core:sys/windows` | Window creation, message pump, `L("...")` UTF-16 literals |
 | Math | built-in `matrix[4,4]f32` + `core:math/linalg` | See the matrix section below — this is the one area needing real care |
-| Image loading (ch. 5+) | `core:image/png` | Pure-Odin PNG loader, zero C deps — enough for the book's textures. `vendor:stb/image` covers other formats and *writing* PNGs (screenshots) — its prebuilt libs, `stb_image_write.lib` included, ship in current toolchains' `vendor/stb/lib`. |
+| Image loading (ch. 5+) | `core:image/png` | Pure-Odin PNG loader, zero C deps — enough for the book's textures. It is **decode-only** (verified on `dev-2026-07`), so screenshots go through `vendor:stb/image`'s `write_png` — its prebuilt `stb_image_write.lib` ships with the toolchain in `vendor/stb/lib`, so this costs no external dependency. |
 | Timing | `core:time` | `tick_now()`/`tick_diff()` replace the engine's QPC `Timer` class |
 
 **Rosetta stone:** the official Odin examples repo contains
@@ -54,23 +54,66 @@ standard in the D3D world (see `Applications/Data/Shaders/RotatingCube.hlsl`). A
 cbuffers default to **column-major packing**. There are two coherent ways to make these
 agree; pick one and never mix:
 
-**Setup A — reuse the book's shaders unchanged (recommended).**
-Declare cbuffer-mirror matrix fields as `#row_major`:
+**Setup A — compile with row-major packing (recommended; what the port does).**
+Pass `D3DCOMPILE_PACK_MATRIX_ROW_MAJOR` on every compile, exactly as the engine's
+`ShaderFactoryDX11` does, and declare cbuffer-mirror fields as *plain* matrices:
 
 ```odin
 Constants :: struct #align (16) {
-    world_view_proj: #row_major matrix[4,4]f32,
+    world_view_proj: matrix[4,4]f32,   // plain — NOT #row_major
 }
 // build the matrix the natural linalg way (column-vector convention):
-wvp: matrix[4,4]f32 = proj * view * world
-constants.world_view_proj = (#row_major matrix[4,4]f32)(wvp)
+constants.world_view_proj = proj * view * world   // uploaded as-is
 ```
 
-Why it works: `#row_major` changes only the *storage* layout, not the logical matrix.
-The field's memory now holds M's rows; HLSL's column-major packing reads those chunks
-as columns, so the shader sees Mᵀ; and `mul(v, Mᵀ) = (M·v)ᵀ` — exactly what the
-row-vector shader needs. Result: **no transposes anywhere, no shader edits, and matrix
-composition stays the readable `P * V * W`.**
+Why it works: the flag makes HLSL read cbuffer matrix memory as the matrix's *rows*.
+An Odin `matrix[4,4]f32` holding a column-vector-convention M stores M's columns,
+which HLSL then reads as rows — so the shader sees Mᵀ, and `mul(v, Mᵀ) = (M·v)ᵀ`,
+exactly what the row-vector shader needs. Result: **no transposes anywhere, no shader
+edits, and matrix composition stays the readable `P * V * W`.**
+
+**Do not also mark the field `#row_major`.** Holding a column-vector matrix, the flag
+and the annotation each transpose once, so together they cancel and you are back to a
+sheared matrix. They are alternatives here, not complements: `#row_major` + HLSL's
+*default* packing gets you to the same place, and earlier drafts of this guide
+recommended exactly that. The compile flag is preferred for two practical reasons —
+it's what `ShaderFactoryDX11` passes, so the book's shaders compile under the same
+rules as the book's own build; and it's set once globally, where `#row_major` must be
+repeated on every matrix field of every cbuffer struct and shears silently if one is
+missed.
+
+**Reading this port against the book's C++.** The convention difference is CPU-side
+notation only — for the same transform, the port's matrix is the *transpose* of the
+book's as a logical object, but stored column-major it produces **byte-identical
+cbuffer contents** to the C++'s row-major upload. The GPU cannot tell the two
+codebases apart; every difference below is in how the source reads:
+
+| | Book / Hieroglyph3 (`Matrix4f`) | This port (`core:math/linalg`) |
+|---|---|---|
+| Convention | row-vector: `v * M` | column-vector: `M * v` |
+| Composition | `World * View * Proj` | `proj * view * world` — same chain, mirrored |
+| Translation sits in | bottom row: `m[3][0..2]` | last column: `m[0..2, 3]` |
+| CPU storage | row-major | column-major |
+| Transposes written | none | none |
+| Bytes uploaded | *identical* | *identical* |
+
+So when the book prints a matrix layout or composes a chain, apply one mechanical
+rule: **transpose the picture, mirror the order**. Nothing else changes — and no
+`transpose()` call ever appears in either codebase, because the row-major compile
+flag and Odin's column-major storage cancel exactly.
+
+Two places the mirror actually bites:
+
+- A shader indexing a matrix by literal row/column sees the transpose:
+  `LightsLP.hlsl`'s `ProjMatrix[3][2]` reads Odin's `proj[2,3]`.
+- Non-commutative composition reverses *within* a chain too: the C++'s
+  `RotationMatrixY(a) * RotationMatrixX(b)` (Y applied first) is
+  `rotate_x(b) * rotate_y(a)` here.
+
+Matching the book's notation exactly would mean hand-rolling row-vector replacements
+for `matrix4_rotate`/`translate`/`scale` (with `#row_major` fields as the matching
+storage half) and never mixing in a linalg builder by accident — a silent-shear
+hazard on every future line. This port deliberately doesn't; read mirrored instead.
 
 **Setup B — the official example's way.** Use default (column-major) matrices and
 write/edit shaders to column-vector style: `mul(projection, mul(world, v))`. Also zero
@@ -142,7 +185,9 @@ convention-agnostic and safe to use from `core:math/linalg`.
 
 9. **Input layouts need shader bytecode.** `CreateInputLayout` validates against the
    compiled VS input signature — keep the VS blob alive until after layout creation,
-   and make semantic names match exactly.
+   and make semantic names match exactly. The layout must supply *every* element the
+   signature declares, including ones the shader body never reads (the skybox VS
+   declares TEXCOORD0 and uses only POSITION; omitting it fails with `E_INVALIDARG`).
 
 10. **Read/write hazards.** A resource can't be bound as SRV while also bound as
     RTV/UAV; D3D silently unbinds and the debug layer warns. When ping-ponging
@@ -163,7 +208,24 @@ convention-agnostic and safe to use from `core:math/linalg`.
     `ParameterManagerDX11` binds by reflection; binding by hand, check the assignments
     (`fxc /dumpbin`, or reflect via `D3DReflect`) rather than assuming.
 
-13. **What not to port.** `ResourceProxyDX11` (int-handle resource + auto-created
+13. **sRGB lives in the image file's metadata, not the format you pick.** WIC (and
+    therefore DirectXTK's `WICTextureLoader`, which the engine uses) inspects a PNG's
+    `sRGB`/`gAMA` chunks and selects an `_SRGB` texture format when they say so. The
+    book's data files carry that metadata, so a `core:image/png` loader that always
+    creates plain `UNORM` leaves every sampled pixel off by a gamma curve — an error
+    that looks like "slightly wrong lighting", never like a bug. Read the chunks
+    (`png.load(..., {.return_metadata})`) and pick the format accordingly.
+
+14. **UAV counters are invisible from the CPU.** Append/consume and counter UAVs keep
+    their count inside the *view*, and there is no getter. You can only write it via
+    the initial-counts array passed to `CSSetUnorderedAccessViews` (a value resets it;
+    `0xffffffff` means "leave alone") and read it via `CopyStructureCount`, which
+    writes 4 bytes into a buffer — either a constant buffer for a shader to read, or a
+    `MiscFlags = {.DRAWINDIRECT_ARGS}` buffer feeding `DrawInstancedIndirect` so the
+    draw size never round-trips to the CPU. Structured buffers additionally need
+    `MiscFlags = {.BUFFER_STRUCTURED}` *and* a matching `StructureByteStride`.
+
+15. **What not to port.** `ResourceProxyDX11` (int-handle resource + auto-created
     views), `ParameterManagerDX11` (reflection-driven auto-binding), the `Evt*` event
     system, the scene graph, `ScriptManager` (Lua). Where a sample calls
     `m_pParamMgr->SetWorldMatrixParameter(...)`, you will `Map` a cbuffer and write a
@@ -386,18 +448,18 @@ project. Reference: `Applications/DeferredRendering/`, `Data/Shaders/GBuffer*.hl
 
 ## Appendix A — Sample ↔ chapter map (this repo)
 
-| Chapter | Samples | Size |
-|---|---|---|
-| 1 Overview | BasicWindow, BasicApplication | 365 / 249 loc |
-| 3 Rendering Pipeline | RotatingCube, ImmediateRenderer | 455 / 400 loc |
-| 4 Tessellation Pipeline | BasicTessellation, TessellationParams | 295 loc / — |
-| 5 Computation Pipeline | BasicComputeShader | 336 loc |
-| 8 Mesh Rendering | SkinAndBones | — |
-| 9 Dynamic Tessellation | CurvedPointNormalTriangles, InterlockingTerrainTiles | — |
-| 10 Image Processing | ImageProcessor | — |
-| 11 Deferred Rendering | DeferredRendering, LightPrepass | ~2k loc |
-| 12 Simulations | WaterSimulationI, ParticleStorm | 499 loc / — |
-| 13 MT Paraboloid Rendering | MirrorMirror | — |
+| Chapter | Samples |
+|---|---|
+| 1 Overview | BasicWindow, BasicApplication |
+| 3 Rendering Pipeline | RotatingCube, ImmediateRenderer |
+| 4 Tessellation Pipeline | BasicTessellation, TessellationParams |
+| 5 Computation Pipeline | BasicComputeShader |
+| 8 Mesh Rendering | SkinAndBones |
+| 9 Dynamic Tessellation | CurvedPointNormalTriangles, InterlockingTerrainTiles |
+| 10 Image Processing | ImageProcessor |
+| 11 Deferred Rendering | DeferredRendering, LightPrepass |
+| 12 Simulations | WaterSimulationI, ParticleStorm |
+| 13 MT Paraboloid Rendering | MirrorMirror |
 
 Shaders for all samples: `Applications/Data/Shaders/` (plain HLSL — with Setup A,
 reusable byte-for-byte). Textures/models: `Applications/Data/`.
