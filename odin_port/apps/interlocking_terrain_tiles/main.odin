@@ -25,7 +25,7 @@ import "core:math/linalg"
 import "core:time"
 import win32 "core:sys/windows"
 import d3d11 "vendor:directx/d3d11"
-import "glyph:camera"
+import dm "glyph:d3d_math"
 import "glyph:renderer"
 import "glyph:shader"
 import "glyph:window"
@@ -45,9 +45,9 @@ Terrain_Vertex :: struct {
 // (b0); the hull constant functions use patch + sampleparams (b0, b1); the
 // DS uses all three (b0, b1, b2); GS/PS use none.
 Main_CB :: struct #align (16) {
-	world:           matrix[4, 4]f32,
-	view_proj:       matrix[4, 4]f32,
-	inv_tpose_world: matrix[4, 4]f32,
+	world:           dm.Matrix4f32,
+	view_proj:       dm.Matrix4f32,
+	inv_tpose_world: dm.Matrix4f32,
 }
 
 // Only .x/.y of the two range vectors are used (zw pad to a register). A
@@ -380,9 +380,12 @@ main :: proc() {
 	auto_view := true
 
 	// The world transform: XZ scale 15 (the domain shader owns Y).
-	world := linalg.matrix4_scale_f32({15, 1, 15})
-	inv_tpose_world := linalg.transpose(linalg.inverse(world))
-	view_proj: matrix[4, 4]f32
+	world := dm.matrix4_scale_f32({15, 1, 15})
+	// mWorld.Inverse().Transpose(), the C++ verbatim — the normal matrix has
+	// the same form in either vector convention, and linalg.transpose keeps
+	// the #row_major type.
+	inv_tpose_world := linalg.transpose(dm.inverse(world))
+	view_proj: dm.Matrix4f32
 	camera_position: [3]f32
 
 	ctx := r.ctx
@@ -434,9 +437,9 @@ main :: proc() {
 			look_from := [3]f32{math.sin(from_angle) * 10.0, 4.0, math.cos(from_angle) * 10.0}
 			look_at := [3]f32{math.sin(to_angle) * 3.0, 0.3, math.cos(to_angle) * 3.0}
 
-			view := camera.look_at_lh(look_from, look_at, {0, 1, 0})
-			proj := camera.perspective_fov_lh(math.PI / 3.0, f32(WIDTH) / f32(HEIGHT), 1.0, 25.0)
-			view_proj = proj * view
+			view := dm.look_at_lh(look_from, look_at, {0, 1, 0})
+			proj := dm.perspective_fov_lh(math.PI / 3.0, f32(WIDTH) / f32(HEIGHT), 1.0, 25.0)
+			view_proj = view * proj
 			camera_position = look_from
 		}
 

@@ -24,7 +24,7 @@ import "core:math"
 import "core:time"
 import win32 "core:sys/windows"
 import d3d11 "vendor:directx/d3d11"
-import "glyph:camera"
+import dm "glyph:d3d_math"
 import "glyph:renderer"
 import "glyph:shader"
 import "glyph:window"
@@ -38,9 +38,9 @@ HEIGHT :: 480
 // + RenderingParameters (b1); the DS uses Transforms (b0) +
 // RenderingParameters (b1); the GS and PS use none.
 Transforms :: struct #align (16) {
-	world:            matrix[4, 4]f32,
-	view_proj:        matrix[4, 4]f32,
-	inv_tpose_world:  matrix[4, 4]f32,
+	world:            dm.Matrix4f32,
+	view_proj:        dm.Matrix4f32,
+	inv_tpose_world:  dm.Matrix4f32,
 }
 
 // xyz are the three SV_TessFactor edges, w the single SV_InsideTessFactor;
@@ -323,14 +323,14 @@ main :: proc() {
 		look_from := [3]f32{math.sin(from_angle) * 2.5, 1.25, math.cos(from_angle) * 2.5}
 		look_at := [3]f32{0, 0, 0}
 
-		view := camera.look_at_lh(look_from, look_at, {0, 1, 0})
-		proj := camera.perspective_fov_lh(math.PI / 3.0, f32(WIDTH) / f32(HEIGHT), 1.0, 25.0)
+		view := dm.look_at_lh(look_from, look_at, {0, 1, 0})
+		proj := dm.perspective_fov_lh(math.PI / 3.0, f32(WIDTH) / f32(HEIGHT), 1.0, 25.0)
 
 		// inv_tpose_world is identity here and the VS ignores it anyway (the
 		// mInvTposeWorld line is commented out in the HLSL) — preserved.
 		transforms := Transforms {
 			world           = 1,
-			view_proj       = proj * view,
+			view_proj       = view * proj,
 			inv_tpose_world = 1,
 		}
 		write_cbuffer(ctx, scene.cb_transforms, &transforms)

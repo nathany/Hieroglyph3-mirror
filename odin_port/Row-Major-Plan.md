@@ -41,6 +41,21 @@ composed products — so the rendered output is unchanged.
 5. **Rewrite the convention comments** in the file (they currently explain
    the column-vector cancellation; see the sweep list below).
 
+**Gotcha when scripting the swaps:** `sed -i` rewrites the whole file with LF
+endings. Three files are stored CRLF — `apps/basic_tessellation/main.odin`,
+`apps/curved_pn_triangles/ply.odin`, `glyph/ms3d/ms3d.odin` — and a converted
+one shows up as an every-line diff. Check with `file`, restore with
+`perl -pi -e 's/(?<!\r)\n/\r\n/'`, and confirm `git diff --stat` shows only
+the real lines.
+
+## Progress
+
+- ✅ rotating_cube — bytes bit-exact at six animation times; visually
+  spot-checked against the C++ by Nathan.
+- ✅ basic_tessellation, tessellation_params, curved_pn_triangles,
+  interlocking_terrain_tiles — every uploaded matrix bit-exact (including
+  the normal matrix, confirming form-invariance empirically).
+
 ## Inventory
 
 `fp_camera.odin` is byte-identical in 5 apps (water_simulation,

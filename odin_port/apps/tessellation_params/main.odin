@@ -26,7 +26,7 @@ import "core:fmt"
 import "core:math"
 import win32 "core:sys/windows"
 import d3d11 "vendor:directx/d3d11"
-import "glyph:camera"
+import dm "glyph:d3d_math"
 import "glyph:renderer"
 import "glyph:shader"
 import "glyph:window"
@@ -37,8 +37,8 @@ HEIGHT :: 480
 // The shader's single `main` cbuffer (the float2 pads out to a 16-byte
 // register).
 Main_CBuffer :: struct #align (16) {
-	world:          matrix[4, 4]f32,
-	view_proj:      matrix[4, 4]f32,
+	world:          dm.Matrix4f32,
+	view_proj:      dm.Matrix4f32,
 	edge_weights:   [4]f32,
 	inside_weights: [2]f32,
 	_pad:           [2]f32,
@@ -208,7 +208,7 @@ Scene :: struct {
 	input_layout:    ^d3d11.IInputLayout,
 	wireframe:       ^d3d11.IRasterizerState,
 	cb_main:         ^d3d11.IBuffer,
-	view_proj:       matrix[4, 4]f32,
+	view_proj:       dm.Matrix4f32,
 }
 
 scene_destroy :: proc(s: ^Scene) {
@@ -322,9 +322,9 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	if device->CreateBuffer(&cb_desc, nil, &s.cb_main) < 0 {return}
 
 	// The camera from App::Initialize.
-	view := camera.look_at_lh({-2, 2, -2}, {0, 0, 0}, {0, 1, 0})
-	proj := camera.perspective_fov_lh(math.PI / 4, f32(WIDTH) / f32(HEIGHT), 0.1, 50.0)
-	s.view_proj = proj * view
+	view := dm.look_at_lh({-2, 2, -2}, {0, 0, 0}, {0, 1, 0})
+	proj := dm.perspective_fov_lh(math.PI / 4, f32(WIDTH) / f32(HEIGHT), 0.1, 50.0)
+	s.view_proj = view * proj
 
 	return s, true
 }

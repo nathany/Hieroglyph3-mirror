@@ -35,7 +35,7 @@ import "core:math/linalg"
 import "core:time"
 import win32 "core:sys/windows"
 import d3d11 "vendor:directx/d3d11"
-import "glyph:camera"
+import dm "glyph:d3d_math"
 import "glyph:ms3d"
 import "glyph:renderer"
 import "glyph:shader"
@@ -45,8 +45,8 @@ WIDTH :: 640
 HEIGHT :: 480
 
 Transforms :: struct #align (16) {
-	world:     matrix[4, 4]f32,
-	view_proj: matrix[4, 4]f32,
+	world:     dm.Matrix4f32,
+	view_proj: dm.Matrix4f32,
 }
 
 Tessellation_Parameters :: struct #align (16) {
@@ -96,7 +96,7 @@ Scene :: struct {
 	cb_transforms:   ^d3d11.IBuffer,
 	cb_tessellation: ^d3d11.IBuffer,
 	cb_rendering:    ^d3d11.IBuffer,
-	view_proj:       matrix[4, 4]f32,
+	view_proj:       dm.Matrix4f32,
 }
 
 scene_destroy :: proc(s: ^Scene) {
@@ -200,9 +200,9 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	s.cb_rendering = dynamic_cbuffer(device, size_of(Rendering_Parameters)) or_return
 
 	// The camera from App::Initialize; ViewProj is constant.
-	view := camera.look_at_lh({5.0, 5.5, -5.0}, {0.0, 0.75, 0.0}, {0.0, 1.0, 0.0})
-	proj := camera.perspective_fov_lh(linalg.PI / 2.0, f32(WIDTH) / f32(HEIGHT), 0.1, 25.0)
-	s.view_proj = proj * view
+	view := dm.look_at_lh({5.0, 5.5, -5.0}, {0.0, 0.75, 0.0}, {0.0, 1.0, 0.0})
+	proj := dm.perspective_fov_lh(linalg.PI / 2.0, f32(WIDTH) / f32(HEIGHT), 0.1, 25.0)
+	s.view_proj = view * proj
 
 	return s, true
 }
@@ -281,7 +281,7 @@ main :: proc() {
 		ctx->ClearDepthStencilView(r.dsv, {.DEPTH}, 1.0, 0)
 
 		transforms := Transforms {
-			world     = linalg.matrix4_rotate_f32(f_rotation, {0, 1, 0}),
+			world     = dm.matrix4_rotate_f32(f_rotation, {0, 1, 0}),
 			view_proj = scene.view_proj,
 		}
 		write_cbuffer(ctx, scene.cb_transforms, &transforms)
