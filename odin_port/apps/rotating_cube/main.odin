@@ -7,12 +7,10 @@
 // WorldViewProjMatrix — so the cbuffer is a *geometry* shader input, the one
 // stage most samples don't use.
 //
-// Matrix conventions: see glyph:shader — with the engine's row-major compile
-// flag, plain Odin matrices compose naturally (`proj * view * world` here
-// equals the C++'s row-vector `World * View * Proj`) and upload with no
-// transposes. The C++'s `RotationMatrixY(t) * RotationMatrixX(t)` (row-
-// vector: Y first, then X) becomes `rotate_x * rotate_y` in column-vector
-// convention.
+// Matrix conventions: row-vector matrices from glyph:d3d_math in #row_major
+// fields, so the math reads exactly like the book's C++ — `World * View *
+// Proj`, uploaded as-is (see glyph:shader for how field layout pairs with
+// the engine's row-major compile flag).
 //
 // The window (and the Space screenshot prefix) is titled "BasicApplication"
 // because the C++ App::GetName() returns exactly that — a copy-paste quirk
@@ -25,7 +23,7 @@ import "core:math/linalg"
 import "core:time"
 import win32 "core:sys/windows"
 import d3d11 "vendor:directx/d3d11"
-import "glyph:camera"
+import dm "glyph:d3d_math"
 import "glyph:renderer"
 import "glyph:shader"
 import "glyph:window"
@@ -40,10 +38,11 @@ Vertex :: struct {
 	color:    [4]f32,
 }
 
-// The shader's `Transforms` cbuffer. Plain matrix — no #row_major, no
+// The shader's `Transforms` cbuffer. Row-major storage matches the compile
+// flag's packing, so the shader sees the matrix exactly as built — no
 // transpose (see glyph:shader's matrix note).
 Transforms :: struct #align (16) {
-	world_view_proj: matrix[4, 4]f32,
+	world_view_proj: dm.Matrix4f32,
 }
 
 App_State :: struct {
@@ -83,8 +82,8 @@ Scene :: struct {
 	rasterizer_state:    ^d3d11.IRasterizerState,
 	depth_stencil_state: ^d3d11.IDepthStencilState,
 	blend_state:         ^d3d11.IBlendState,
-	view:                matrix[4, 4]f32,
-	proj:                matrix[4, 4]f32,
+	view:                dm.Matrix4f32,
+	proj:                dm.Matrix4f32,
 }
 
 scene_destroy :: proc(s: ^Scene) {
@@ -229,10 +228,10 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	if device->CreateBuffer(&cb_desc, nil, &s.constant_buffer) < 0 {return}
 
 	// The "camera" from App::Initialize: XMMatrixLookAtLH /
-	// XMMatrixPerspectiveFovLH with the same arguments, via glyph:camera's
+	// XMMatrixPerspectiveFovLH with the same arguments, via glyph:d3d_math's
 	// LH 0..1-depth helpers.
-	s.view = camera.look_at_lh({0.0, 1.0, -5.0}, {0.0, 1.0, 0.0}, {0.0, 1.0, 0.0})
-	s.proj = camera.perspective_fov_lh(linalg.PI / 2.0, f32(WIDTH) / f32(HEIGHT), 0.01, 100.0)
+	s.view = dm.look_at_lh({0.0, 1.0, -5.0}, {0.0, 1.0, 0.0}, {0.0, 1.0, 0.0})
+	s.proj = dm.perspective_fov_lh(linalg.PI / 2.0, f32(WIDTH) / f32(HEIGHT), 0.01, 100.0)
 
 	return s, true
 }
@@ -296,16 +295,16 @@ main :: proc() {
 		// App::Update — clear, animate the world matrix, draw, present.
 		t := f32(time.duration_seconds(time.tick_since(start)))
 
-		// C++ (row-vector): RotationMatrixY(t) * RotationMatrixX(t) — Y
-		// first, then X. Column-vector equivalent: rotate_x * rotate_y.
-		world := linalg.matrix4_rotate_f32(t, {1, 0, 0}) * linalg.matrix4_rotate_f32(t, {0, 1, 0})
-		world_view_proj := scene.proj * scene.view * world
+		// The C++ verbatim: RotationMatrixY(t) * RotationMatrixX(t), then
+		// ParameterManagerDX11's WorldMatrix * ViewProjMatrix.
+		world := dm.matrix4_rotate_f32(t, {0, 1, 0}) * dm.matrix4_rotate_f32(t, {1, 0, 0})
+		world_view_proj := world * scene.view * scene.proj
 
 		color := [4]f32{0.0, 0.0, 0.0, 0.0}
 		ctx->ClearRenderTargetView(r.rtv, &color)
 		ctx->ClearDepthStencilView(r.dsv, {.DEPTH}, 1.0, 0)
 
-		// Upload WorldViewProjMatrix (no transpose — see glyph:shader).
+		// Upload WorldViewProjMatrix as built (no transpose — see glyph:shader).
 		mapped: d3d11.MAPPED_SUBRESOURCE
 		if ctx->Map((^d3d11.IResource)(scene.constant_buffer), 0, .WRITE_DISCARD, {}, &mapped) >= 0 {
 			(^Transforms)(mapped.pData).world_view_proj = world_view_proj
