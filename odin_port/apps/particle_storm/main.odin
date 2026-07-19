@@ -42,7 +42,7 @@ import "core:math/rand"
 import "core:time"
 import win32 "core:sys/windows"
 import d3d11 "vendor:directx/d3d11"
-import "glyph:camera"
+import dm "glyph:d3d_math"
 import "glyph:renderer"
 import "glyph:shader"
 import "glyph:window"
@@ -75,8 +75,8 @@ Insert_CB :: struct #align (16) {
 // ParticleSystemRender `Transforms` (b0) and `ParticleRenderParameters` (b1),
 // both in the geometry shader.
 Transforms_CB :: struct #align (16) {
-	world_view: matrix[4, 4]f32,
-	proj:       matrix[4, 4]f32,
+	world_view: dm.Matrix4f32,
+	proj:       dm.Matrix4f32,
 }
 
 Render_Params_CB :: struct #align (16) {
@@ -484,7 +484,7 @@ main :: proc() {
 		pitch    = 0.307,
 		yaw      = 0.707,
 	}
-	proj := camera.perspective_fov_lh(f32(linalg.PI) / 4, f32(WIDTH) / f32(HEIGHT), NEAR_CLIP, FAR_CLIP)
+	proj := dm.perspective_fov_lh(f32(linalg.PI) / 4, f32(WIDTH) / f32(HEIGHT), NEAR_CLIP, FAR_CLIP)
 
 	// current/next particle buffer roles; the C++ swaps every frame in
 	// ViewSimulation::Update, so "current" alternates.
@@ -522,7 +522,7 @@ main :: proc() {
 				fmt.eprintln("failed to recreate the depth buffer after resize")
 				return
 			}
-			proj = camera.perspective_fov_lh(f32(linalg.PI) / 4, f32(r.width) / f32(r.height), NEAR_CLIP, FAR_CLIP)
+			proj = dm.perspective_fov_lh(f32(linalg.PI) / 4, f32(r.width) / f32(r.height), NEAR_CLIP, FAR_CLIP)
 			state.pending_resize = {}
 		}
 

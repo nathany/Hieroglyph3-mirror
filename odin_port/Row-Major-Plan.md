@@ -58,8 +58,19 @@ edits are safe and `git diff` shows only real changes.
   movement bases and view matrix all bit-exact; the composed
   world-view-proj differs by 1.7e-6 *relative* (float association across a
   three-matrix product — the first demo not bit-exact, as anticipated).
-  **The other four apps still hold the column-vector `fp_camera.odin`** —
+  **The other apps still hold the column-vector `fp_camera.odin`** —
   copy this one in as each is converted, not before, or they won't compile.
+- ✅ particle_storm — first consumer of the ported camera; everything
+  bit-exact. It has **no CPU-side composition at all**: the GS composes the
+  chain itself (`mul(pos, WorldViewMatrix)` then `mul(.., ProjMatrix)`), so
+  `world_view` and `proj` upload as single matrices, and single matrices are
+  bit-identical across conventions by the transmute identity. The whole
+  conversion was the camera file plus type swaps.
+
+Before copying `fp_camera.odin` into the next app, confirm that app's copy
+still matches the *pre-conversion* baseline — `git show <commit-before-water>:
+odin_port/apps/water_simulation/fp_camera.odin`. Comparing against `HEAD`
+is misleading once the converted version is committed.
 
 **Writing the equivalence harness:** it compares *storage bytes*, and a
 column-major matrix and its row-major logical transpose have identical
