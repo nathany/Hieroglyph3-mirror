@@ -61,6 +61,7 @@ source location, so lookup doesn't depend on the working directory.
 | `light_prepass` | Applications/LightPrepass | 11 | ✅ MSAA deferred lighting, N cycles light count (no text) |
 | `deferred_rendering` | Applications/DeferredRendering | 11 | ✅ V/N/K/O/M toggles (no text) |
 | `water_simulation` | Applications/WaterSimulationI | 12 | ✅ CS water sim on wireframe heightmap (no text) |
+| `particle_storm` | Applications/ParticleStorm | 12 | ✅ append/consume GPU particles, indirect draw (no text) |
 
 ### basic_window
 
@@ -246,6 +247,29 @@ behaves the same way, just at its own frame rate. The camera start
 (-100, 40.5, -120) is the app's body transform *plus* the engine's default
 camera node at (0, 10, -20). The C++'s unused "FinalColor" parameter is
 omitted.
+
+### particle_storm
+
+Chapter 12's GPU particle system. 512×512 = 262,144 particles ping-pong
+between two structured buffers with APPEND-flagged UAVs. Per frame:
+`ParticleSystemInsertCS.hlsl` appends batches of 8 particles at the emitter
+(-50, 10, 0) with randomly reflected directions (throttled to one batch per
+~0.9 ms — the C++'s particles-per-insert × lifetime / buffer-size rate);
+`CopyStructureCount` latches the append counter into a 16-byte **constant**
+buffer; `ParticleSystemUpdateCS.hlsl` (512×512 threads) `Consume()`s every
+live particle, accelerates it toward the "black hole" at (50, 0, 0), and
+`Append()`s it to the other buffer unless it crossed the event horizon
+(r ≤ 5) or aged past 30 s; a second `CopyStructureCount` fills a
+`DrawInstancedIndirect` arguments buffer. Rendering needs no vertex data at
+all: the VS fetches positions by `SV_VertexID` from the state buffer, a GS
+expands each point into a camera-facing quad colored red near the black
+hole → blue far away, and the PS modulates `Particle.png`, additively
+blended with depth-test-no-write. Port gotcha worth remembering: the render
+VS's `SimulationState` buffer has no explicit register, but FXC still
+honors the (unused-in-VS) `ParticleTexture : register(t0)` reservation, so
+the buffer lands on **t1**. The C++'s `bDebugActive` counter-readback path
+is mirrored behind `-define:DEBUG_COUNTS=true`. FPS in the title bar;
+camera start (-100, 70.5, -120) = body transform + default camera node.
 
 ### immediate_renderer
 
