@@ -47,7 +47,7 @@ import "core:math/linalg"
 import "core:time"
 import win32 "core:sys/windows"
 import d3d11 "vendor:directx/d3d11"
-import "glyph:camera"
+import dm "glyph:d3d_math"
 import "glyph:ms3d"
 import "glyph:renderer"
 import "glyph:shader"
@@ -64,22 +64,22 @@ MAX_LIGHTS :: 1000 // ViewLights::MaxNumLights
 
 // GBufferLP/FinalPassLP `Transforms` (b0 in both vertex shaders).
 Transforms_CB :: struct #align (16) {
-	world:           matrix[4, 4]f32,
-	world_view:      matrix[4, 4]f32,
-	world_view_proj: matrix[4, 4]f32,
+	world:           dm.Matrix4f32,
+	world_view:      dm.Matrix4f32,
+	world_view_proj: dm.Matrix4f32,
 }
 
 // LightsLP `CameraParams` (b0 in the light VS, GS, and PS). The GS and PS
 // index the projection matrix by literal [row][col] — ProjMatrix[0][0] and
-// [1][1] for the quad fit, [2][2]/[3][2] to linearize depth — which only
-// lands on the right elements because shaders here compile with
-// PACK_MATRIX_ROW_MAJOR, so HLSL reads these column-vector Odin matrices as
-// their row-vector transposes (see glyph/shader). Same reason `inv_proj` can
-// be a plain linalg.inverse and the GS's row-vector mul() works unchanged.
+// [1][1] for the quad fit, [2][2]/[3][2] to linearize depth. These are
+// row-vector matrices in #row_major fields matching the shaders'
+// PACK_MATRIX_ROW_MAJOR packing, so the indices line up one-to-one: HLSL
+// ProjMatrix[3][2] is Odin proj[3, 2], no mental transpose (see
+// glyph/shader).
 Camera_CB :: struct #align (16) {
-	view:        matrix[4, 4]f32,
-	proj:        matrix[4, 4]f32,
-	inv_proj:    matrix[4, 4]f32,
+	view:        dm.Matrix4f32,
+	proj:        dm.Matrix4f32,
+	inv_proj:    dm.Matrix4f32,
 	clip_planes: [2]f32,
 	_pad:        [2]f32,
 }
@@ -850,7 +850,7 @@ main :: proc() {
 		pitch    = 0.407,
 		yaw      = -0.707,
 	}
-	proj := camera.perspective_fov_lh(f32(linalg.PI) / 2, f32(WIDTH) / f32(HEIGHT), NEAR_CLIP, FAR_CLIP)
+	proj := dm.perspective_fov_lh(f32(linalg.PI) / 2, f32(WIDTH) / f32(HEIGHT), NEAR_CLIP, FAR_CLIP)
 
 	light_mode := Light_Mode.Lights3x3x3
 	lights: [dynamic]Light_Vertex
@@ -885,7 +885,7 @@ main :: proc() {
 				fmt.eprintln("failed to recreate render targets after resize")
 				return
 			}
-			proj = camera.perspective_fov_lh(f32(linalg.PI) / 2, f32(r.width) / f32(r.height), NEAR_CLIP, FAR_CLIP)
+			proj = dm.perspective_fov_lh(f32(linalg.PI) / 2, f32(r.width) / f32(r.height), NEAR_CLIP, FAR_CLIP)
 			state.pending_resize = {}
 		}
 
@@ -902,21 +902,21 @@ main :: proc() {
 
 		// The scene's root node spins about Y at 0.2 rad/s.
 		rotation_angle += dt * 0.2
-		world := linalg.matrix4_rotate_f32(rotation_angle, {0, 1, 0})
+		world := dm.matrix4_rotate_f32(rotation_angle, {0, 1, 0})
 
-		// Column-vector composition (the C++ multiplies the other way round);
-		// the shaders' row-vector mul() still lines up — see Camera_CB.
+		// The engine's order (ParameterManagerDX11): WorldMatrix * ViewMatrix,
+		// then * ProjMatrix.
 		transforms := Transforms_CB {
 			world           = world,
-			world_view      = view * world,
-			world_view_proj = proj * view * world,
+			world_view      = world * view,
+			world_view_proj = world * view * proj,
 		}
 		write_cbuffer(ctx, scene.cb_transforms, &transforms)
 
 		camera_cb := Camera_CB {
 			view        = view,
 			proj        = proj,
-			inv_proj    = linalg.inverse(proj),
+			inv_proj    = dm.inverse(proj),
 			clip_planes = {NEAR_CLIP, FAR_CLIP},
 		}
 		write_cbuffer(ctx, scene.cb_camera, &camera_cb)

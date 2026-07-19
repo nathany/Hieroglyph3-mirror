@@ -67,6 +67,14 @@ edits are safe and `git diff` shows only real changes.
   bit-identical across conventions by the transmute identity. The whole
   conversion was the camera file plus type swaps.
 
+- ✅ light_prepass — `world`, `world_view`, `view`, `proj` and `inv_proj`
+  all bit-exact; only the three-matrix `world_view_proj` drifts (5.6e-7
+  relative). Its `Camera_CB` comment needed rewriting, not just retyping:
+  the shaders index `ProjMatrix[0][0]/[1][1]/[2][2]/[3][2]` literally, and
+  under Setup A those line up one-to-one with Odin's `proj[i, j]` instead of
+  needing the old "HLSL sees the transpose" explanation. Verified
+  `proj[3,2] == -near*far/(far-near)`.
+
 Before copying `fp_camera.odin` into the next app, confirm that app's copy
 still matches the *pre-conversion* baseline — `git show <commit-before-water>:
 odin_port/apps/water_simulation/fp_camera.odin`. Comparing against `HEAD`
