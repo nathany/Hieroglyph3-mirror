@@ -54,6 +54,22 @@ edits are safe and `git diff` shows only real changes.
 - ✅ basic_tessellation, tessellation_params, curved_pn_triangles,
   interlocking_terrain_tiles — every uploaded matrix bit-exact (including
   the normal matrix, confirming form-invariance empirically).
+- ✅ water_simulation, including the shared `fp_camera.odin`. Rotation,
+  movement bases and view matrix all bit-exact; the composed
+  world-view-proj differs by 1.7e-6 *relative* (float association across a
+  three-matrix product — the first demo not bit-exact, as anticipated).
+  **The other four apps still hold the column-vector `fp_camera.odin`** —
+  copy this one in as each is converted, not before, or they won't compile.
+
+**Writing the equivalence harness:** it compares *storage bytes*, and a
+column-major matrix and its row-major logical transpose have identical
+storage — that IS the convention change. So the assertion is
+`cmp(old_column_vector_result, new_row_vector_result)` with no transpose
+anywhere. Inserting a `linalg.transpose` on the old side transposes twice
+and fails on everything non-symmetric (it passed at pitch=yaw=0, which is
+how I nearly mistook a broken test for a broken port). Report relative as
+well as absolute error: a world-view-proj holds entries of order 10³, where
+1e-5 absolute is ~1e-6 relative and unremarkable.
 
 ## Inventory
 

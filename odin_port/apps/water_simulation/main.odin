@@ -38,7 +38,7 @@ import "core:math/linalg"
 import "core:time"
 import win32 "core:sys/windows"
 import d3d11 "vendor:directx/d3d11"
-import "glyph:camera"
+import dm "glyph:d3d_math"
 import "glyph:renderer"
 import "glyph:shader"
 import "glyph:window"
@@ -75,7 +75,7 @@ Time_CB :: struct #align (16) {
 
 // HeightmapVisualization.hlsl `Transforms` (b0) and `DispatchParams` (b1).
 Transforms_CB :: struct #align (16) {
-	world_view_proj: matrix[4, 4]f32,
+	world_view_proj: dm.Matrix4f32,
 }
 
 Dispatch_CB :: struct #align (16) {
@@ -489,7 +489,7 @@ main :: proc() {
 		pitch    = 0.307,
 		yaw      = 0.707,
 	}
-	proj := camera.perspective_fov_lh(f32(linalg.PI) / 4, f32(WIDTH) / f32(HEIGHT), NEAR_CLIP, FAR_CLIP)
+	proj := dm.perspective_fov_lh(f32(linalg.PI) / 4, f32(WIDTH) / f32(HEIGHT), NEAR_CLIP, FAR_CLIP)
 
 	current := 0 // which water buffer holds the current state
 	rotation_angle: f32 = 0.0
@@ -523,7 +523,7 @@ main :: proc() {
 				fmt.eprintln("failed to recreate the depth buffer after resize")
 				return
 			}
-			proj = camera.perspective_fov_lh(f32(linalg.PI) / 4, f32(r.width) / f32(r.height), NEAR_CLIP, FAR_CLIP)
+			proj = dm.perspective_fov_lh(f32(linalg.PI) / 4, f32(r.width) / f32(r.height), NEAR_CLIP, FAR_CLIP)
 			state.pending_resize = {}
 		}
 
@@ -547,9 +547,10 @@ main :: proc() {
 		view := camera_view_matrix(&cam)
 
 		// The plane's node spins about Y at 0.2 rad/s; the body offset
-		// centers the grid on the origin.
+		// centers the grid on the origin. Row-vector, so the composition
+		// reads outward as the engine builds it: body transform, then node.
 		rotation_angle += dt * 0.2
-		world := linalg.matrix4_rotate_f32(rotation_angle, {0, 1, 0}) * linalg.matrix4_translate_f32({-8 * DISPATCH_X, 0, -8 * DISPATCH_Z})
+		world := dm.matrix4_translate_f32({-8 * DISPATCH_X, 0, -8 * DISPATCH_Z}) * dm.matrix4_rotate_f32(rotation_angle, {0, 1, 0})
 
 		// --- 1. Simulation pass (ViewSimulation) ---------------------------
 		// App::Update doubles the elapsed time in TimeFactors.x. The shader
@@ -588,7 +589,7 @@ main :: proc() {
 
 		// --- 2. Visualization pass -----------------------------------------
 		transforms := Transforms_CB {
-			world_view_proj = proj * view * world,
+			world_view_proj = world * view * proj,
 		}
 		write_cbuffer(ctx, scene.cb_transforms, &transforms)
 
