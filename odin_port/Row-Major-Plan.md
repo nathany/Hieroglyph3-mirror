@@ -75,6 +75,17 @@ edits are safe and `git diff` shows only real changes.
   needing the old "HLSL sees the transpose" explanation. Verified
   `proj[3,2] == -near*far/(far-near)`.
 
+- ✅ deferred_rendering — the largest surface: 4 compositions, 4 view-space
+  point/direction transforms, the light-volume world matrix (column-vector
+  `T * S` becomes row-vector `S * T`), and `proj`/`inv_proj` through the
+  `[16]f32` alignment workaround (the fields stay `[16]f32`; only the
+  transmute source changed, and the bytes are bit-exact). `calc_scissor_rect`
+  was verified **end to end** — its output rectangles are identical integers,
+  which matters because a wrong point transform there yields a subtly wrong
+  rectangle rather than an error. Two convention comments needed rewriting,
+  including one that stated HLSL `ProjMatrix[3][2]` reads Odin `proj[2,3]` —
+  under Setup A it reads `proj[3,2]`.
+
 Before copying `fp_camera.odin` into the next app, confirm that app's copy
 still matches the *pre-conversion* baseline — `git show <commit-before-water>:
 odin_port/apps/water_simulation/fp_camera.odin`. Comparing against `HEAD`

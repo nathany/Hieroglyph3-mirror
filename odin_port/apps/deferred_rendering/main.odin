@@ -47,7 +47,7 @@ import win32 "core:sys/windows"
 import d3d11 "vendor:directx/d3d11"
 import d3dc "vendor:directx/d3d_compiler"
 import dxgi "vendor:directx/dxgi"
-import "glyph:camera"
+import dm "glyph:d3d_math"
 import "glyph:ms3d"
 import "glyph:renderer"
 import "glyph:shader"
@@ -133,9 +133,9 @@ aa_mode_names := [AA_Mode]string {
 // GBuffer.hlsl / Lights.hlsl `Transforms` (b0 in the G-Buffer VS and the
 // light-volume VS).
 Transforms_CB :: struct #align (16) {
-	world:           matrix[4, 4]f32,
-	world_view:      matrix[4, 4]f32,
-	world_view_proj: matrix[4, 4]f32,
+	world:           dm.Matrix4f32,
+	world_view:      dm.Matrix4f32,
+	world_view_proj: dm.Matrix4f32,
 }
 
 // Lights.hlsl `LightParams` (b0 in the light PS). Every float3 is followed
@@ -159,11 +159,12 @@ Light_Params_CB :: struct #align (16) {
 // Lights.hlsl `CameraParams` (b0 in the light-quad VS, b1 in the light PS).
 // The matrices start at byte offset 16, which Odin's 32-byte-aligned matrix
 // type can't express — so they're stored as raw float arrays (same memory).
-// Shaders compile with PACK_MATRIX_ROW_MAJOR (see glyph:shader), so an Odin
-// column-vector matrix arrives transposed, which is what the book's
-// `mul(v, M)` shaders want. That also means Lights.hlsl's
-// `ProjMatrix[3][2] / (z - ProjMatrix[2][2])` reads Odin's proj[2,3] and
-// proj[2,2] — the LH 0..1 depth terms it needs to linearize the z-buffer.
+// These are row-vector matrices (glyph:d3d_math) and the shaders compile
+// with PACK_MATRIX_ROW_MAJOR (see glyph:shader), so storage and packing
+// agree and the shader sees each matrix as built. Lights.hlsl's
+// `ProjMatrix[3][2] / (z - ProjMatrix[2][2])` therefore reads Odin's
+// proj[3,2] and proj[2,2] — the LH 0..1 depth terms it needs to linearize
+// the z-buffer. transmute to [16]f32 preserves the bytes either way.
 Camera_Params_CB :: struct #align (16) {
 	camera_pos: [3]f32,
 	_pad0:      f32,
@@ -933,11 +934,12 @@ build_lights :: proc(lights: ^[dynamic]Light, mode: Light_Mode) {
 }
 
 // ViewLights::CalcScissorRect — fit a screen-space scissor rectangle to the
-// light's bounding sphere. Only the diagonal terms proj[0,0]/proj[1,1] are
-// read, so the row-vs-column-vector question never arises; like the C++,
-// this assumes a projection symmetric in X and Y.
-calc_scissor_rect :: proc(view, proj: matrix[4, 4]f32, light_pos: [3]f32, light_range: f32, vp_width, vp_height: f32) -> d3d11.RECT {
-	center := view * [4]f32{light_pos.x, light_pos.y, light_pos.z, 1}
+// light's bounding sphere. The projection is only sampled on its diagonal
+// (proj[0,0]/proj[1,1]), which is transpose-invariant; the view transform is
+// row-vector `v * view`, matching the C++. Like the C++, this assumes a
+// projection symmetric in X and Y.
+calc_scissor_rect :: proc(view, proj: dm.Matrix4f32, light_pos: [3]f32, light_range: f32, vp_width, vp_height: f32) -> d3d11.RECT {
+	center := [4]f32{light_pos.x, light_pos.y, light_pos.z, 1} * view
 	radius := light_range
 
 	top := center + {0, radius, 0, 0}
@@ -1027,7 +1029,7 @@ main :: proc() {
 		pitch    = 0.407,
 		yaw      = -0.707,
 	}
-	proj := camera.perspective_fov_lh(f32(linalg.PI) / 2, f32(WIDTH) / f32(HEIGHT), NEAR_CLIP, FAR_CLIP)
+	proj := dm.perspective_fov_lh(f32(linalg.PI) / 2, f32(WIDTH) / f32(HEIGHT), NEAR_CLIP, FAR_CLIP)
 
 	// AppSettings.cpp startup values: optimizations on, volume lights.
 	settings := Settings {
@@ -1093,7 +1095,7 @@ main :: proc() {
 				fmt.eprintln("failed to recreate render targets after resize")
 				return
 			}
-			proj = camera.perspective_fov_lh(f32(linalg.PI) / 2, f32(r.width) / f32(r.height), NEAR_CLIP, FAR_CLIP)
+			proj = dm.perspective_fov_lh(f32(linalg.PI) / 2, f32(r.width) / f32(r.height), NEAR_CLIP, FAR_CLIP)
 			state.pending_resize = {}
 		}
 
@@ -1127,7 +1129,7 @@ main :: proc() {
 		view := camera_view_matrix(&cam)
 
 		rotation_angle += dt * 0.2
-		world := linalg.matrix4_rotate_f32(rotation_angle, {0, 1, 0})
+		world := dm.matrix4_rotate_f32(rotation_angle, {0, 1, 0})
 
 		build_lights(&lights, settings.light_mode)
 
@@ -1160,14 +1162,13 @@ main :: proc() {
 		}
 		ctx->ClearDepthStencilView(aa.depth_dsv, {.DEPTH, .STENCIL}, 1.0, 0)
 
-		// Column-vector composition; uploaded without transposes because the
-		// row-major compile flag hands the shaders the transpose they want
-		// (see glyph:shader). world_view is what VSMainOptimized uses to put
-		// the tangent frame in view space.
+		// The engine's order (ParameterManagerDX11): World * View, then
+		// * Proj, uploaded as built. world_view is what VSMainOptimized uses
+		// to put the tangent frame in view space.
 		transforms := Transforms_CB {
 			world           = world,
-			world_view      = view * world,
-			world_view_proj = proj * view * world,
+			world_view      = world * view,
+			world_view_proj = world * view * proj,
 		}
 		write_cbuffer(ctx, scene.cb_transforms, &transforms)
 
@@ -1222,7 +1223,7 @@ main :: proc() {
 		camera_cb := Camera_Params_CB {
 			camera_pos = {0, 0, 0}, // the C++ passes the scene root's position — the origin
 			proj       = transmute([16]f32)proj,
-			inv_proj   = transmute([16]f32)linalg.inverse(proj),
+			inv_proj   = transmute([16]f32)dm.inverse(proj),
 		}
 		write_cbuffer(ctx, scene.cb_camera, &camera_cb)
 
@@ -1248,8 +1249,8 @@ main :: proc() {
 				light_range     = {light.range, 1, 1, 1},
 			}
 			if settings.gbuf_opt == .Enabled {
-				pos4 := view * [4]f32{light.position.x, light.position.y, light.position.z, 1}
-				dir4 := view * [4]f32{light_cb.light_direction.x, light_cb.light_direction.y, light_cb.light_direction.z, 0}
+				pos4 := [4]f32{light.position.x, light.position.y, light.position.z, 1} * view
+				dir4 := [4]f32{light_cb.light_direction.x, light_cb.light_direction.y, light_cb.light_direction.z, 0} * view
 				light_cb.light_pos = pos4.xyz
 				light_cb.light_direction = dir4.xyz
 			}
@@ -1287,16 +1288,16 @@ main :: proc() {
 			case .Volumes:
 				// The C++'s quad fallback (volume crossing both clip planes)
 				// can't happen with this light grid, so only spheres draw.
-				light_pos_vs := view * [4]f32{light.position.x, light.position.y, light.position.z, 1}
+				light_pos_vs := [4]f32{light.position.x, light.position.y, light.position.z, 1} * view
 				intersects_far := light_pos_vs.z + light.range >= FAR_CLIP
 
 				// 1.1x slack so the unit sphere comfortably contains the
 				// light's attenuation radius (m_WorldMatrix.Scale in the C++).
-				volume_world := linalg.matrix4_translate_f32(light.position) * linalg.matrix4_scale_f32(light.range * 1.1)
+				volume_world := dm.matrix4_scale_f32(light.range * 1.1) * dm.matrix4_translate_f32(light.position)
 				volume_transforms := Transforms_CB {
 					world           = volume_world,
-					world_view      = view * volume_world,
-					world_view_proj = proj * view * volume_world,
+					world_view      = volume_world * view,
+					world_view_proj = volume_world * view * proj,
 				}
 				write_cbuffer(ctx, scene.cb_transforms, &volume_transforms)
 
