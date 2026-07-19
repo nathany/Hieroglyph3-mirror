@@ -75,6 +75,9 @@ message_callback :: proc(data: rawptr, hwnd: win32.HWND, msg: win32.UINT, wparam
 			state.next_algorithm = true
 		case win32.WPARAM('I'):
 			state.next_image = true
+		// Space cycles the sampler, not a screenshot — the other ports bind
+		// Space to save_backbuffer_png, but this app has no screenshot key at
+		// all because the C++ repurposes the same key. Preserved.
 		case win32.WPARAM(win32.VK_SPACE):
 			state.next_sampler = true
 		case win32.WPARAM(win32.VK_ESCAPE):
@@ -141,7 +144,12 @@ Source_Image :: struct {
 }
 
 // An R16G16B16A16_FLOAT UAV+SRV texture (SetColorBuffer + the app's bind
-// flags), used for the intermediate and output filter targets.
+// flags), used for the intermediate and output filter targets. Half-float
+// rather than 8-bit UNORM because the separable variants store a partially
+// filtered image here between the X and Y passes; quantizing that
+// intermediate to 8 bits would band visibly once the second pass rescales
+// it. The dual UAV+SRV binding is what lets a pass write it and the next
+// pass read it.
 Filter_Target :: struct {
 	texture: ^d3d11.ITexture2D,
 	srv:     ^d3d11.IShaderResourceView,
@@ -224,6 +232,14 @@ create_compute :: proc(device: ^d3d11.IDevice, file, entry: string) -> (cs: ^d3d
 create_pipeline :: proc(r: ^renderer.Renderer) -> (p: Pipeline, ok: bool) {
 	device := r.device
 
+	// The chapter's optimization progression, all producing the same 7x7
+	// Gaussian: brute force reads 49 texels per pixel from a 32x32 group;
+	// separable splits it into two 7-tap passes (14 reads, ~3.5x fewer) at
+	// the cost of an intermediate target; cached adds groupshared memory so
+	// each group loads its row/column once instead of re-reading overlapping
+	// taps out of the texture cache. Bilateral is the same story with an
+	// edge-preserving range weight, and is only *approximately* separable —
+	// the C++ ships both and lets you compare.
 	p.cs_gaussian_brute = create_compute(device, "GaussianBruteForceCS.hlsl", "CSMAIN") or_return
 	p.cs_gaussian_separable[0] = create_compute(device, "GaussianSeparableCS.hlsl", "CSMAINX") or_return
 	p.cs_gaussian_separable[1] = create_compute(device, "GaussianSeparableCS.hlsl", "CSMAINY") or_return
@@ -313,6 +329,13 @@ create_pipeline :: proc(r: ^renderer.Renderer) -> (p: Pipeline, ok: bool) {
 // One compute pass: bind, dispatch, unbind (the C++'s Dispatch +
 // ClearPipelineResources sequence, upholding the no-simultaneous-SRV-and-UAV
 // rule before the next pass reads what this one wrote).
+//
+// The unbinds are not optional bookkeeping. A resource cannot be bound as an
+// SRV and a UAV at the same time; if the separable Y pass bound the
+// intermediate as its t0 input while it was still the X pass's u0, D3D would
+// silently drop one of the two bindings and the debug layer would warn. Since
+// the X pass writes the intermediate and the Y pass reads it, clearing both
+// slots here is what makes the ping-pong legal.
 dispatch_filter :: proc(
 	ctx: ^d3d11.IDeviceContext,
 	cs: ^d3d11.IComputeShader,
@@ -448,11 +471,20 @@ main :: proc() {
 		iw := f32(img.width)
 		ih := f32(img.height)
 
-		// Filter pass(es) — dispatch sizes exactly as App::Update.
+		// --- filter pass(es) (App::Update) ---------------------------------
+		// Dispatch sizes follow each shader's [numthreads] exactly: the
+		// brute-force shaders are 32x32, so both axes round up by 32. The
+		// separable shaders declare one *line* of threads — (640,1,1) for X
+		// and (1,480,1) for Y — hence the lopsided counts: X rounds width up
+		// by 640 and runs one group per scanline, Y runs one group per column
+		// and rounds height up by 480.
 		switch algorithm {
 		case 0:
 			dispatch_filter(ctx, pipeline.cs_gaussian_brute, img.srv, output.uav,
 				u32((iw + 31) / 32), u32((ih + 31) / 32))
+		// The separable variants ping-pong: X filters the source image into
+		// the intermediate, Y filters the intermediate into the output. Only
+		// the second pass's target is ever displayed.
 		case 1, 2, 4:
 			pair: [2]^d3d11.IComputeShader
 			switch algorithm {

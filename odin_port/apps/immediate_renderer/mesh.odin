@@ -99,11 +99,16 @@ create_dynamic_buffer :: proc(device: ^d3d11.IDevice, byte_width: u32, bind: d3d
 // Upload to the GPU if anything changed, growing the DYNAMIC buffers when
 // the data outgrows them.
 mesh_commit :: proc(m: ^Immediate_Mesh, device: ^d3d11.IDevice, ctx: ^d3d11.IDeviceContext) {
+	// Static meshes go dirty once, on construction, and never map again — the
+	// per-frame Map cost is paid only by the grid.
 	if !m.dirty || len(m.vertices) == 0 {
 		m.dirty = false
 		return
 	}
 
+	// Capacity only grows: a smaller rebuild reuses the existing buffer and
+	// just leaves the tail bytes stale, which is fine because the draw call
+	// is bounded by len(m.indices), not by the buffer size.
 	if len(m.vertices) > m.vertex_capacity {
 		if m.vertex_buffer != nil {m.vertex_buffer->Release()}
 		m.vertex_buffer = create_dynamic_buffer(device, u32(len(m.vertices) * size_of(Basic_Vertex)), {.VERTEX_BUFFER})
@@ -115,6 +120,9 @@ mesh_commit :: proc(m: ^Immediate_Mesh, device: ^d3d11.IDevice, ctx: ^d3d11.IDev
 		m.index_capacity = len(m.indices)
 	}
 
+	// WRITE_DISCARD rather than NO_OVERWRITE: the whole contents are being
+	// replaced, so let the driver rename the buffer instead of waiting for
+	// the GPU to finish reading last frame's copy.
 	mapped: d3d11.MAPPED_SUBRESOURCE
 	if m.vertex_buffer != nil && ctx->Map((^d3d11.IResource)(m.vertex_buffer), 0, .WRITE_DISCARD, {}, &mapped) >= 0 {
 		copy(([^]Basic_Vertex)(mapped.pData)[:len(m.vertices)], m.vertices[:])
@@ -155,7 +163,13 @@ tessellate_tri_grid :: proc(
 	sample: proc(user: rawptr, x, y: f32) -> (position, normal: [3]f32, tex: [2]f32),
 	user: rawptr,
 ) {
+	// Every builder offsets its indices by the current vertex count, so shapes
+	// accumulate into one shared mesh (and one draw call) rather than each
+	// owning a buffer.
 	base := u32(len(m.vertices))
+	// The +1 row/column duplicates the seam: at theta = 0 and theta = 2pi the
+	// positions coincide but the texcoords differ, so the vertices cannot be
+	// shared.
 	col_step := xmax / f32(cols)
 	row_step := ymax / f32(rows)
 
@@ -190,6 +204,10 @@ draw_sphere :: proc(m: ^Immediate_Mesh, center: [3]f32, radius: f32, stacks, sli
 	model := Sphere_Model{center, radius}
 	tessellate_tri_grid(m, max(stacks, 2), max(slices, 4), 2 * math.PI, math.PI,
 		proc(user: rawptr, theta, phi: f32) -> (position, normal: [3]f32, tex: [2]f32) {
+			// On a unit sphere the outward normal *is* the surface direction,
+			// so one spherical-coordinate evaluation gives both. The phi = 0
+			// and phi = pi rows collapse onto the poles, leaving a ring of
+			// degenerate triangles there — harmless, and preserved.
 			s := (^Sphere_Model)(user)
 			normal = {math.sin(phi) * math.cos(theta), math.cos(phi), math.sin(phi) * math.sin(theta)}
 			position = s.center + normal * s.radius
@@ -210,6 +228,9 @@ Cone_Model :: struct {
 }
 
 draw_cylinder :: proc(m: ^Immediate_Mesh, p1, p2: [3]f32, r1, r2: f32, stacks: u32 = 2, slices: u32 = 10) {
+	// Axis points p2 -> p1, so h = 0 is the p2 end (radius r2) and h = 1 is
+	// the p1 end (radius r1). draw_arrow relies on that ordering to taper the
+	// head to a point by passing r2 = 0.
 	axis := p1 - p2
 	model := Cone_Model {
 		p1 = p1, p2 = p2, r1 = r1, r2 = r2,
@@ -225,8 +246,14 @@ draw_cylinder :: proc(m: ^Immediate_Mesh, p1, p2: [3]f32, r1, r2: f32, stacks: u
 			rot := linalg.matrix3_rotate_f32(theta, c.vnorm)
 			radius := c.r2 + (c.r1 - c.r2) * h
 			position = c.p2 + c.vnorm * c.height * h + rot * c.unit * radius
+			// Tilt the radial direction back along the axis by the taper
+			// slope (r1-r2)/height; for a plain cylinder slope is 0 and the
+			// normal stays purely radial.
 			normal = linalg.normalize(rot * c.unit - c.vnorm * c.slope)
-			tex = {h, theta} // TexcoordsFromCone: (height, theta)
+			// TexcoordsFromCone: (height, theta) with theta left in raw
+			// radians, not divided by 2pi — preserved from the C++, and
+			// invisible here since these shapes use the vertex-color material.
+			tex = {h, theta}
 			return
 		}, &model)
 }
@@ -237,6 +264,9 @@ draw_disc :: proc(m: ^Immediate_Mesh, center, normal: [3]f32, radius: f32, slice
 	vnorm := linalg.normalize(normal)
 	up := [3]f32{0, 1, 0}
 
+	// The rim start direction is the perpendicular to the axis pointing
+	// closest to +Y; when the axis is already +/-Y that is undefined, so fall
+	// back to +X. (Exact float equality is the C++ test, kept as-is.)
 	unit: [3]f32
 	if vnorm == up || vnorm == -up {
 		unit = {1, 0, 0}
@@ -255,6 +285,9 @@ draw_disc :: proc(m: ^Immediate_Mesh, center, normal: [3]f32, radius: f32, slice
 		add_vertex_normal(m, center + rot * unit * radius, vnorm)
 	}
 
+	// The fan reaches base+slices+1, in range only because the rim loop emits
+	// slices+1 vertices — the duplicate at theta = 2pi is what closes the
+	// circle without a modulo.
 	for x in 1 ..= slices {
 		add_index(m, base)
 		add_index(m, base + x)
@@ -282,7 +315,9 @@ draw_rect :: proc(m: ^Immediate_Mesh, center, xdir, ydir: [3]f32, extents: [2]f3
 	add_index(m, base + 3)
 }
 
-// GeometryActor::DrawBox: six rects.
+// GeometryActor::DrawBox: six rects. Each face negates one of xdir/ydir/zdir
+// so cross(xdir, ydir) — and hence the winding draw_rect produces — always
+// faces outward.
 draw_box :: proc(m: ^Immediate_Mesh, center, extents: [3]f32) {
 	xdir := [3]f32{1, 0, 0}
 	ydir := [3]f32{0, 1, 0}
@@ -309,6 +344,8 @@ draw_arrow :: proc(m: ^Immediate_Mesh, base_pt, point: [3]f32, shaft_radius, hea
 
 	draw_cylinder(m, base_pt, shaft_end, shaft_radius, shaft_radius)
 	draw_cylinder(m, shaft_end, point, head_radius, 0.0)
+	// The head cone is open at its wide end; this disc caps it, facing back
+	// down the shaft so it is visible from behind the arrowhead.
 	draw_disc(m, shaft_end, -unit_arrow, head_radius)
 }
 
@@ -325,6 +362,8 @@ draw_bezier_curve :: proc(m: ^Immediate_Mesh, points: [4][3]f32, t0, t1: f32, se
 			points[1] * (3 * t * mt * mt) +
 			points[2] * (3 * t * t * mt) +
 			points[3] * (t * t * t)
+		// add_vertex leaves the default (0,1,0) normal — the curve still runs
+		// through the lit material, so it shades as a flat up-facing surface.
 		add_vertex(m, point)
 	}
 

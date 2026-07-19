@@ -54,6 +54,13 @@ Editing :: enum {
 	Inside,
 }
 
+// The four tessellator partitioning modes, in the order the 'P' key cycles
+// them. Partitioning decides how the tessellator turns a (possibly
+// fractional) tess factor into segments: pow2 and integer round up to a
+// whole number of equal segments, while the two fractional modes keep the
+// fraction and absorb it as a pair of shrinking segments — odd at the edge
+// ends, even straddling the edge centre — so detail can grow smoothly
+// instead of popping.
 PARTITION_NAMES := [4]string{"pow2", "integer", "fractional_odd", "fractional_even"}
 PARTITION_DEFINES := [4]cstring{
 	"POW2_PARTITIONING",
@@ -177,6 +184,8 @@ Patch :: struct {
 	vertex_buffer: ^d3d11.IBuffer,
 	vertex_count:  u32,
 	topology:      d3d11.PRIMITIVE_TOPOLOGY,
+	// One compiled hull shader per PARTITION_DEFINES entry, indexed by
+	// Tess_State.partitioning.
 	hull_shaders:  [4]^d3d11.IHullShader,
 	domain_shader: ^d3d11.IDomainShader,
 }
@@ -225,6 +234,14 @@ create_patch :: proc(
 ) {
 	// One hull shader per partitioning mode, selected by a preprocessor
 	// define — the [partitioning(...)] attribute can't be set at runtime.
+	// hs_entry is only the CONTROL-POINT phase (a pass-through, run once per
+	// output control point); the factors come from the separate patch-constant
+	// function named by [patchconstantfunc], which runs once per patch:
+	// hsPerTriPatch copies the weights straight through, while hsPerQuadPatch
+	// runs them through Process2DQuadTessFactorsAvg first — a D3DX helper
+	// that clamps the four edge factors and derives the two inside factors
+	// from their average, so the quad's interior stays consistent with its
+	// (possibly unequal) edges.
 	for define, i in PARTITION_DEFINES {
 		defines := [1]cstring{define}
 		blob := shader.compile_defines("TessellationParameters.hlsl", hs_entry, "hs_5_0", defines[:]) or_return
@@ -277,6 +294,9 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 		{{1, 0, -1}, black},
 	}
 
+	// The patch-list topology must match the hull shader's InputPatch size:
+	// a quad domain takes 4 control points and exposes 4 edge + 2 inside
+	// factors, a tri domain 3 control points with 3 edge + 1 inside.
 	s.quad = create_patch(device, quad_points[:], "hsQuadMain", "dsQuadMain", ._4_CONTROL_POINT_PATCHLIST) or_return
 	s.tri = create_patch(device, tri_points[:], "hsTriangleMain", "dsTriangleMain", ._3_CONTROL_POINT_PATCHLIST) or_return
 

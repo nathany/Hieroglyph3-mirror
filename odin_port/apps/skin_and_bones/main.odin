@@ -42,7 +42,13 @@ WIDTH :: 800
 HEIGHT :: 600
 NUM_BONES :: 6
 
-// MeshSkinned*.hlsl's SkinningTransforms cbuffer.
+// MeshSkinned*.hlsl's SkinningTransforms cbuffer. Both skinned shaders blend
+// a vertex through SkinMatrices[bone.xyzw] weighted by weights.xyzw and take
+// that result as the WORLD-space position — `world` below is written to match
+// the C++ layout but no shader ever reads it. The two shaders differ only in
+// where the ViewProjMatrix multiply happens: the plain VS does it inline, the
+// tessellated VS leaves the position in world space so the HS/DS can subdivide
+// and displace it, and the DS applies ViewProjMatrix last.
 Skinning_Transforms :: struct #align (16) {
 	world:                matrix[4, 4]f32,
 	view_proj:            matrix[4, 4]f32,
@@ -443,6 +449,9 @@ main :: proc() {
 		skinned_node := linalg.matrix4_translate_f32([3]f32{0, 0, 20}) * linalg.matrix4_rotate_f32(spin, [3]f32{0, 1, 0})
 		static_world := linalg.matrix4_translate_f32([3]f32{-20, 10, 15}) * linalg.matrix4_rotate_f32(spin, [3]f32{0, 1, 0})
 
+		// Each actor drives its own chain because the node matrix is the root
+		// of the bone hierarchy, not a separate world transform applied
+		// afterwards — two actors at different positions cannot share bones.
 		bones_update(displaced_bones[:], displaced_node, dt)
 		bones_update(skinned_bones[:], skinned_node, dt)
 
@@ -479,6 +488,11 @@ main :: proc() {
 		offset: u32 = 0
 		ctx->IASetVertexBuffers(0, 1, &scene.cone_vb, &stride, &offset)
 		ctx->IASetIndexBuffer(scene.cone_ib, .R32_UINT, 0)
+		// Same triangle index buffer as the plain cone below, reinterpreted:
+		// with a hull shader bound, each group of 3 indices is a patch's
+		// control points rather than a triangle. The HS declares
+		// domain("tri")/outputcontrolpoints(3) to match, so the subdivided
+		// domain lines up exactly with the original triangles.
 		ctx->IASetPrimitiveTopology(._3_CONTROL_POINT_PATCHLIST)
 
 		vs_cbuffers := [2]^d3d11.IBuffer{scene.cb_skinning, scene.cb_light}
@@ -489,6 +503,11 @@ main :: proc() {
 		// The DS's only used cbuffer (SkinningTransforms.ViewProjMatrix)
 		// lands in its b0; HeightTexture is declared register(t1).
 		ctx->DSSetConstantBuffers(0, 1, &scene.cb_skinning)
+		// t0 (ColorTexture) is unused by the DS, so slot 0 is padded with nil
+		// purely to land the height map in t1. The DS pushes each generated
+		// point along its interpolated normal by HeightTexture.r * 0.5, at a
+		// MIP level chosen from the point's distance to a hard-coded world
+		// reference position — preserved from the C++ shader.
 		ds_srvs := [2]^d3d11.IShaderResourceView{nil, scene.height_srv}
 		ctx->DSSetShaderResources(0, 2, &ds_srvs[0])
 		ctx->DSSetSamplers(0, 1, &scene.aniso_sampler)
@@ -499,6 +518,8 @@ main :: proc() {
 
 		ctx->DrawIndexed(scene.cone_index_count, 0, 0)
 
+		// Unbind the tessellation stages before the untessellated draws — the
+		// device would otherwise keep feeding patches to a stale HS/DS.
 		ctx->HSSetShader(nil, nil, 0)
 		ctx->DSSetShader(nil, nil, 0)
 

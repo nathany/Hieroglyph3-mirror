@@ -138,7 +138,10 @@ Transforms_CB :: struct #align (16) {
 	world_view_proj: matrix[4, 4]f32,
 }
 
-// Lights.hlsl `LightParams` (b0 in the light PS).
+// Lights.hlsl `LightParams` (b0 in the light PS). Every float3 is followed
+// by a pad word because HLSL packs each cbuffer member into its own
+// 16-byte register boundary here — LightPos, LightColor and LightDirection
+// are each declared as a bare float3 in the shader.
 Light_Params_CB :: struct #align (16) {
 	light_pos:       [3]f32,
 	_pad0:           f32,
@@ -156,6 +159,11 @@ Light_Params_CB :: struct #align (16) {
 // Lights.hlsl `CameraParams` (b0 in the light-quad VS, b1 in the light PS).
 // The matrices start at byte offset 16, which Odin's 32-byte-aligned matrix
 // type can't express — so they're stored as raw float arrays (same memory).
+// Shaders compile with PACK_MATRIX_ROW_MAJOR (see glyph:shader), so an Odin
+// column-vector matrix arrives transposed, which is what the book's
+// `mul(v, M)` shaders want. That also means Lights.hlsl's
+// `ProjMatrix[3][2] / (z - ProjMatrix[2][2])` reads Odin's proj[2,3] and
+// proj[2,2] — the LH 0..1 depth terms it needs to linearize the z-buffer.
 Camera_Params_CB :: struct #align (16) {
 	camera_pos: [3]f32,
 	_pad0:      f32,
@@ -172,6 +180,9 @@ Blit_CB :: struct #align (16) {
 
 // --- vertex formats ----------------------------------------------------------
 
+// Matches GBuffer.hlsl's VSInput: POSITION/TEXCOORDS0/NORMAL/TANGENT at
+// offsets 0/12/20/32, as the input layout in `setup` declares. The .w of
+// the tangent carries the bitangent handedness sign.
 Scene_Vertex :: struct {
 	position:  [3]f32,
 	texcoords: [2]f32,
@@ -401,6 +412,9 @@ targets_create :: proc(device: ^d3d11.IDevice, width, height: u32) -> (t: Target
 		aa.gbuf_opt[2] = color_target_create(device, aa.width, aa.height, .R8G8B8A8_UNORM, samples) or_return
 		aa.final = color_target_create(device, aa.width, aa.height, .R10G10B10A2_UNORM, samples) or_return
 
+		// Typeless depth: written through a D24_UNORM_S8_UINT DSV, read back
+		// through an R24_UNORM_X8_TYPELESS SRV. A concrete depth format
+		// couldn't do both.
 		depth_desc := d3d11.TEXTURE2D_DESC {
 			Width      = aa.width,
 			Height     = aa.height,
@@ -418,6 +432,11 @@ targets_create :: proc(device: ^d3d11.IDevice, width, height: u32) -> (t: Target
 			ViewDimension = .TEXTURE2DMS if mode == .MSAA else .TEXTURE2D,
 		}
 		if device->CreateDepthStencilView((^d3d11.IResource)(aa.depth_tex), &dsv_desc, &aa.depth_dsv) < 0 {return}
+		// The light pass needs depth bound as a DSV (for stencil/depth tests
+		// against the light volume) and as an SRV (for position
+		// reconstruction) at the same time. D3D11 only allows that if the
+		// DSV is read-only, hence this second view over the same texture —
+		// ViewDeferredRenderer's m_ReadOnlyDepthTarget.
 		dsv_desc.Flags = {.DEPTH, .STENCIL} // read-only depth + stencil
 		if device->CreateDepthStencilView((^d3d11.IResource)(aa.depth_tex), &dsv_desc, &aa.depth_dsv_ro) < 0 {return}
 
@@ -425,12 +444,15 @@ targets_create :: proc(device: ^d3d11.IDevice, width, height: u32) -> (t: Target
 			Format        = .R24_UNORM_X8_TYPELESS,
 			ViewDimension = .TEXTURE2DMS if mode == .MSAA else .TEXTURE2D,
 		}
+		// TEXTURE2DMS has no mip fields — the union must stay zeroed there.
 		if mode != .MSAA {
 			srv_desc.Texture2D = {MostDetailedMip = 0, MipLevels = 1}
 		}
 		if device->CreateShaderResourceView((^d3d11.IResource)(aa.depth_tex), &srv_desc, &aa.depth_srv) < 0 {return}
 	}
 
+	// Single-sample destination for the MSAA path's ResolveSubresource; must
+	// match the final target's format.
 	t.resolve = color_target_create(device, width, height, .R10G10B10A2_UNORM, 1) or_return
 	return t, true
 }
@@ -529,6 +551,9 @@ Scene :: struct {
 	gbuffer_vs:      [Gbuf_Opt]^d3d11.IVertexShader,
 	gbuffer_ps:      [Gbuf_Opt]^d3d11.IPixelShader,
 	// Point-light shaders, indexed by [G-Buffer opt][volume path][MSAA].
+	// The C++ keys the middle axis on all three LightOptModes, but only
+	// Volumes changes a #define — None and ScissorRect compile identically,
+	// so this collapses to 2.
 	light_effects:   [Gbuf_Opt][2][2]Light_Effect,
 	blit_vs:         ^d3d11.IVertexShader,
 	blit_ps:         ^d3d11.IPixelShader,
@@ -675,6 +700,9 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 			for msaa in 0 ..< 2 {
 				defines: [dynamic]cstring
 				defer delete(defines)
+				// SPOTLIGHT/DIRECTIONALLIGHT are omitted rather than defined
+				// to "0" — the C++ compiles those two light types too, but
+				// this port only ever draws point lights.
 				append(&defines, "POINTLIGHT")
 				if opt == .Enabled {append(&defines, "GBUFFEROPTIMIZATIONS")}
 				if volumes == 1 {append(&defines, "LIGHTVOLUMES")}
@@ -775,7 +803,9 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	}
 	if device->CreateInputLayout(&sphere_elements[0], 1, volume_vs_blob->GetBufferPointer(), volume_vs_blob->GetBufferSize(), &s.sphere_layout) < 0 {return}
 
-	// Depth-stencil states.
+	// Depth-stencil states. The G-Buffer pass REPLACEs stencil with the ref
+	// value (1, passed to OMSetDepthStencilState) on every pixel it shades,
+	// so the light pass can stencil-EQUAL-test against 1 and skip the sky.
 	ds_desc := d3d11.DEPTH_STENCIL_DESC {
 		DepthEnable = true,
 		DepthWriteMask = .ALL,
@@ -789,6 +819,8 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	if device->CreateDepthStencilState(&ds_desc, &s.ds_gbuffer) < 0 {return}
 
 	// The light states: stencil EQUAL, no writes; depth off / <= / >=.
+	// StencilWriteMask 0 and DepthWriteMask ZERO are required — the light
+	// pass runs against the read-only DSV, which forbids any writes.
 	ds_desc.DepthEnable = false
 	ds_desc.DepthWriteMask = .ZERO
 	ds_desc.StencilWriteMask = 0
@@ -832,6 +864,8 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	if device->CreateRasterizerState(&rs_desc, &s.rs_back_cull) < 0 {return}
 	rs_desc.CullMode = .FRONT
 	if device->CreateRasterizerState(&rs_desc, &s.rs_front_cull) < 0 {return}
+	// ScissorEnable is baked into the rasterizer state, so the scissor path
+	// needs its own object even though it culls like rs_back_cull.
 	rs_desc.CullMode = .BACK
 	rs_desc.ScissorEnable = true
 	if device->CreateRasterizerState(&rs_desc, &s.rs_scissor) < 0 {return}
@@ -869,6 +903,8 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 build_lights :: proc(lights: ^[dynamic]Light, mode: Light_Mode) {
 	clear(lights)
 
+	// 3, 5 or 7 lights per axis — 27, 125 or 343 draws in the light pass,
+	// which is the whole point of the optimization toggles.
 	cube_size := 3 + int(mode) * 2
 	cube_min := -(cube_size / 2)
 	cube_max := cube_size / 2
@@ -897,7 +933,9 @@ build_lights :: proc(lights: ^[dynamic]Light, mode: Light_Mode) {
 }
 
 // ViewLights::CalcScissorRect — fit a screen-space scissor rectangle to the
-// light's bounding sphere.
+// light's bounding sphere. Only the diagonal terms proj[0,0]/proj[1,1] are
+// read, so the row-vs-column-vector question never arises; like the C++,
+// this assumes a projection symmetric in X and Y.
 calc_scissor_rect :: proc(view, proj: matrix[4, 4]f32, light_pos: [3]f32, light_range: f32, vp_width, vp_height: f32) -> d3d11.RECT {
 	center := view * [4]f32{light_pos.x, light_pos.y, light_pos.z, 1}
 	radius := light_range
@@ -1019,6 +1057,8 @@ main :: proc() {
 		}
 		write_cbuffer(ctx, s.cb_blit, &cb)
 
+		// No vertex buffer: the four corners come from SV_VertexID, so the
+		// input layout is deliberately nil.
 		ctx->IASetInputLayout(nil)
 		ctx->IASetPrimitiveTopology(.TRIANGLESTRIP)
 		ctx->VSSetShader(s.blit_vs, nil, 0)
@@ -1092,6 +1132,8 @@ main :: proc() {
 		build_lights(&lights, settings.light_mode)
 
 		aa := &targets.aa[settings.aa_mode]
+		// GBuffer.hlsl's PSOutput declares SV_Target0..3; PSOutputOptimized
+		// stops at SV_Target2 because position comes from the depth buffer.
 		gbuf_count := 4 if settings.gbuf_opt == .Disabled else 3
 		msaa := settings.aa_mode == .MSAA
 
@@ -1109,6 +1151,8 @@ main :: proc() {
 		for i in 0 ..< gbuf_count {
 			rtvs[i] = aa.gbuf_unopt[i].rtv if settings.gbuf_opt == .Disabled else aa.gbuf_opt[i].rtv
 		}
+		// The writable DSV here, not depth_dsv_ro — this pass writes depth
+		// and the stencil mask.
 		ctx->OMSetRenderTargets(u32(gbuf_count), &rtvs[0], aa.depth_dsv)
 		ctx->RSSetViewports(1, &rt_viewport)
 		for i in 0 ..< gbuf_count {
@@ -1116,6 +1160,10 @@ main :: proc() {
 		}
 		ctx->ClearDepthStencilView(aa.depth_dsv, {.DEPTH, .STENCIL}, 1.0, 0)
 
+		// Column-vector composition; uploaded without transposes because the
+		// row-major compile flag hands the shaders the transpose they want
+		// (see glyph:shader). world_view is what VSMainOptimized uses to put
+		// the tangent frame in view space.
 		transforms := Transforms_CB {
 			world           = world,
 			world_view      = view * world,
@@ -1136,18 +1184,28 @@ main :: proc() {
 		scene_srvs := [2]^d3d11.IShaderResourceView{scene.diffuse_srv, scene.normal_srv}
 		ctx->PSSetShaderResources(0, 2, &scene_srvs[0])
 		ctx->PSSetSamplers(0, 1, &scene.sampler_aniso)
+		// Stencil ref 1: the value REPLACEd into every shaded pixel.
 		ctx->OMSetDepthStencilState(scene.ds_gbuffer, 1)
 		ctx->OMSetBlendState(nil, nil, 0xffffffff)
 		ctx->RSSetState(scene.rs_back_cull)
 		ctx->DrawIndexed(scene.index_count, 0, 0)
 
 		// --- 2. Light pass (ViewLights) ------------------------------------
+		// Unbind the G-Buffer pass's PS textures first: they are about to be
+		// bound the other way round (the G-Buffer RTVs become SRVs below),
+		// and D3D11 would silently null one of the two bindings.
 		ctx->PSSetShaderResources(0, 4, &null_srvs[0])
+		// Clear with no DSV attached, then re-attach the read-only one: a
+		// read-only DSV can't be cleared, and depth/stencil must survive the
+		// pass anyway. Mirrors ViewLights::ExecuteTask's two ApplyRenderTargets.
 		ctx->OMSetRenderTargets(1, &aa.final.rtv, nil)
 		ctx->ClearRenderTargetView(aa.final.rtv, &clear_color)
 		ctx->OMSetRenderTargets(1, &aa.final.rtv, aa.depth_dsv_ro)
 
 		// G-Buffer SRVs t0..t3; with optimizations the depth SRV rides in t3.
+		// Lights.hlsl deliberately declares both PositionTexture and
+		// DepthTexture at register t3 — only one is referenced per
+		// permutation, so the aliasing is safe and the slot is reused.
 		light_srvs: [4]^d3d11.IShaderResourceView
 		if settings.gbuf_opt == .Disabled {
 			for i in 0 ..< 4 {
@@ -1171,6 +1229,7 @@ main :: proc() {
 		effect := scene.light_effects[settings.gbuf_opt][1 if settings.light_opt == .Volumes else 0][1 if msaa else 0]
 		ctx->VSSetShader(effect.vs, nil, 0)
 		ctx->PSSetShader(effect.ps, nil, 0)
+		// b0/b1 in declaration order: LightParams then CameraParams.
 		light_ps_cbs := [2]^d3d11.IBuffer{scene.cb_light_params, scene.cb_camera}
 		ctx->PSSetConstantBuffers(0, 2, &light_ps_cbs[0])
 		ctx->OMSetBlendState(scene.bs_additive, nil, 0xffffffff)
@@ -1182,6 +1241,9 @@ main :: proc() {
 				light_pos       = light.position,
 				light_color     = light.color,
 				light_direction = linalg.normalize([3]f32{-1, -1, 1}), // LightParams default
+				// cos(SpotInnerAngle/2), cos(SpotOuterAngle/2) with both
+				// angles at their LightParams default of 0 — preserved from
+				// the C++, and unread by the POINTLIGHT permutation.
 				spot_angles     = {math.cos_f32(0), math.cos_f32(0)},
 				light_range     = {light.range, 1, 1, 1},
 			}
@@ -1195,6 +1257,10 @@ main :: proc() {
 
 			switch settings.light_opt {
 			case .None:
+				// The quad VS passes clip-space positions straight through
+				// and only touches InvProjMatrix, so CameraParams is the
+				// single cbuffer it keeps — landing at b0. (The volume VS
+				// below keeps Transforms instead, also at b0.)
 				ctx->RSSetState(scene.rs_back_cull)
 				ctx->OMSetDepthStencilState(scene.ds_disabled, 1)
 				quad_stride: u32 = size_of(Quad_Vertex)
@@ -1205,6 +1271,8 @@ main :: proc() {
 				ctx->DrawIndexed(6, 0, 0)
 
 			case .Scissor_Rect:
+				// Scissor is in target pixels, so the SSAA/MSAA target size
+				// is the right viewport extent here, not the window size.
 				rect := calc_scissor_rect(view, proj, light.position, light.range, f32(aa.width), f32(aa.height))
 				ctx->RSSetScissorRects(1, &rect)
 				ctx->RSSetState(scene.rs_scissor)
@@ -1222,6 +1290,8 @@ main :: proc() {
 				light_pos_vs := view * [4]f32{light.position.x, light.position.y, light.position.z, 1}
 				intersects_far := light_pos_vs.z + light.range >= FAR_CLIP
 
+				// 1.1x slack so the unit sphere comfortably contains the
+				// light's attenuation radius (m_WorldMatrix.Scale in the C++).
 				volume_world := linalg.matrix4_translate_f32(light.position) * linalg.matrix4_scale_f32(light.range * 1.1)
 				volume_transforms := Transforms_CB {
 					world           = volume_world,
@@ -1230,6 +1300,13 @@ main :: proc() {
 				}
 				write_cbuffer(ctx, scene.cb_transforms, &volume_transforms)
 
+				// Normal case: draw the sphere's *back* faces (cull front)
+				// and keep fragments whose depth is GREATER_EQUAL, i.e.
+				// scene geometry that lies in front of the volume's far
+				// side — so each lit pixel is shaded exactly once even when
+				// the camera is inside the volume. If the volume pokes
+				// through the far plane its back faces get clipped away, so
+				// fall back to front faces with LESS_EQUAL.
 				if intersects_far {
 					ctx->RSSetState(scene.rs_back_cull)
 					ctx->OMSetDepthStencilState(scene.ds_less_equal, 1)
@@ -1248,8 +1325,11 @@ main :: proc() {
 		}
 
 		// --- 3. Display (ViewDeferredRenderer::ExecuteTask) ----------------
+		// Unbind the G-Buffer SRVs before the final target (also an SRV
+		// below) and the backbuffer take over the pipeline.
 		ctx->PSSetShaderResources(0, 4, &null_srvs[0])
 		ctx->OMSetRenderTargets(1, &r.rtv, nil)
+		// Back to window pixels — the passes above ran at aa.width/height.
 		backbuffer_viewport := d3d11.VIEWPORT {
 			Width    = f32(r.width),
 			Height   = f32(r.height),
@@ -1259,6 +1339,10 @@ main :: proc() {
 		ctx->RSSetViewports(1, &backbuffer_viewport)
 		ctx->ClearRenderTargetView(r.rtv, &clear_color)
 
+		// SSAA's targets are 2x, so a 0.5 destination scale lands them back
+		// at window size — and the blit's linear sampler is what actually
+		// performs the 2x2 downsample. This is the C++'s SpriteRenderer
+		// ScaleMatrix( scaleFactor ).
 		scale: f32 = 0.5 if settings.aa_mode == .SSAA else 1.0
 		vp_w := f32(r.width)
 		vp_h := f32(r.height)
@@ -1268,6 +1352,9 @@ main :: proc() {
 		switch {
 		case settings.display_mode == .Final:
 			srv := aa.final.srv
+			// A multisampled SRV can't be Sampled, only Loaded — so the MSAA
+			// path resolves into the single-sample target first, and blits
+			// that 1:1 (its samples, not its resolution, carried the AA).
 			if msaa {
 				ctx->ResolveSubresource(
 					(^d3d11.IResource)(targets.resolve.tex), 0,
@@ -1285,7 +1372,9 @@ main :: proc() {
 		// without text rendering the screen just stays black.
 
 		case settings.display_mode == .G_Buffer:
-			// Quadrants at the C++'s hardcoded 1280x720 offsets.
+			// Quadrants at the C++'s hardcoded 1280x720 offsets — at this
+			// app's 800x480 the 640/360 origins put the right and bottom
+			// tiles largely off-screen. Preserved rather than fixed.
 			tile :: proc(gbuf_opt: Gbuf_Opt, aa: ^AA_Targets, i: int) -> ^d3d11.IShaderResourceView {
 				return aa.gbuf_unopt[i].srv if gbuf_opt == .Disabled else aa.gbuf_opt[i].srv
 			}
@@ -1296,7 +1385,10 @@ main :: proc() {
 			blit(ctx, &scene, last, 640, 360, tex_w * 0.5 * scale, tex_h * 0.5 * scale, vp_w, vp_h)
 
 		case:
-			// A single G-Buffer attribute fullscreen.
+			// A single G-Buffer attribute fullscreen. Normals/Diffuse/
+			// Specular/Position are consecutive, so subtracting .Normals
+			// gives the target index — the C++'s
+			// `gBuffer[ DisplayMode::Value - DisplayMode::Normals ]`.
 			index := int(settings.display_mode) - int(Display_Mode.Normals)
 			srv: ^d3d11.IShaderResourceView
 			if settings.gbuf_opt == .Enabled && settings.display_mode == .Position {
@@ -1309,6 +1401,8 @@ main :: proc() {
 			blit(ctx, &scene, srv, 0, 0, tex_w * scale, tex_h * scale, vp_w, vp_h)
 		}
 
+		// Leave nothing bound as an SRV: next frame starts by binding these
+		// same textures as render targets.
 		ctx->PSSetShaderResources(0, 4, &null_srvs[0])
 		ctx->OMSetBlendState(nil, nil, 0xffffffff)
 

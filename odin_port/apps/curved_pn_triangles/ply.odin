@@ -89,7 +89,9 @@ ply_load :: proc(filename: string) -> (mesh: Ply_Mesh, ok: bool) {
 		append(&mesh.vertices, v)
 	}
 
-	// Face lines: <count> i0 i1 i2 (triangles only).
+	// Face lines: <count> i0 i1 i2 (triangles only). The indices are emitted
+	// flat, exactly as for a triangle list — the caller reinterprets them as
+	// 3-control-point patches purely via the IA topology.
 	for _ in 0 ..< face_count {
 		line := next_line(&text) or_return
 		fields := strings.fields(line, context.temp_allocator)

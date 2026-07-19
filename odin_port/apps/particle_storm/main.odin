@@ -295,6 +295,15 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	buf_data := d3d11.SUBRESOURCE_DATA {
 		pSysMem = raw_data(initial),
 	}
+	// The APPEND flag is what makes these views usable as HLSL
+	// AppendStructuredBuffer / ConsumeStructuredBuffer. It gives each *view*
+	// a hidden 32-bit counter that Append() increments and Consume()
+	// decrements atomically, so the shader never manages an index itself and
+	// live particles stay packed at the front of the buffer with no
+	// compaction pass. The counter lives on the view, not the buffer, and
+	// there is no CPU-visible handle to it — CopyStructureCount is the only
+	// way to read it, and the initial-counts argument to
+	// CSSetUnorderedAccessViews is the only way to write it.
 	uav_desc := d3d11.UNORDERED_ACCESS_VIEW_DESC {
 		Format = .UNKNOWN,
 		ViewDimension = .BUFFER,
@@ -320,6 +329,13 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	}
 	if device->CreateBuffer(&count_desc, &count_data, &s.cb_count) < 0 {return}
 
+	// DrawInstancedIndirect reads exactly four uints from this buffer:
+	// {VertexCountPerInstance, InstanceCount, StartVertexLocation,
+	// StartInstanceLocation}. Only slot 0 is ever rewritten (by
+	// CopyStructureCount), so the instance count is baked to 1 here and the
+	// live particle count becomes the vertex count of a single point-list
+	// instance. DRAWINDIRECT_ARGS is a MiscFlag, not a BindFlag — the buffer
+	// is never bound to a pipeline slot.
 	args := [4]u32{0, 1, 0, 0}
 	args_desc := d3d11.BUFFER_DESC {
 		ByteWidth = size_of(args),
@@ -540,8 +556,15 @@ main :: proc() {
 		}
 		write_cbuffer(ctx, scene.cb_simulation, &sim_cb)
 
-		// One-time init: prime both append counters to zero with an empty
-		// 1-group update dispatch.
+		// --- one-time counter priming (the C++'s bOneTimeInit) -------------
+		// The hidden append counters come up undefined, so they must be set
+		// before anything appends or consumes. The final argument to
+		// CSSetUnorderedAccessViews is a parallel array of initial counts:
+		// a value resets that view's counter, and 0xffffffff means "leave it
+		// alone". Passing {0, 0} here zeroes both. The dispatch itself does
+		// nothing useful — NumParticles is still 0 so every thread's
+		// `myID < NumParticles.x` test fails — it exists only because the
+		// counts are applied as a side effect of binding the UAVs.
 		if one_time_init {
 			one_time_init = false
 			init_counts := [2]u32{0, 0}
@@ -553,8 +576,12 @@ main :: proc() {
 			ctx->Dispatch(1, 1, 1)
 		}
 
-		// Insert pass: one batch of 8 particles per throttle interval. The
-		// insert CS's u0 (append) is the *current* state buffer.
+		// --- insert pass ---------------------------------------------------
+		// One batch of 8 particles per throttle interval. The insert CS's u0
+		// (append) is the *current* state buffer, so the new particles join
+		// the pool the update pass is about to consume and are simulated the
+		// same frame. keep_count = 0xffffffff preserves the running counter —
+		// resetting it here would silently discard every live particle.
 		if insert_delta > THROTTLE {
 			insert_delta = 0.0
 			insert_cb := Insert_CB {
@@ -570,10 +597,23 @@ main :: proc() {
 			ctx->Dispatch(1, 1, 1)
 		}
 
-		// Latch the current particle count into the NumParticles cbuffer,
-		// then run the update: consume from u1 (current), append to u0 (next).
+		// --- update pass ---------------------------------------------------
+		// CopyStructureCount is the bridge between GPU-side counters and the
+		// rest of the pipeline: it writes a view's hidden counter as a single
+		// uint into any buffer, with no CPU round trip and no stall. Here it
+		// feeds the NumParticles constant buffer (b1) so the update shader
+		// can bound its own thread count — the dispatch below always launches
+		// all 262,144 threads, and threads past the live count exit before
+		// calling Consume(), which would otherwise underflow the counter.
 		ctx->CopyStructureCount(scene.cb_count, 0, scene.particle_uav[current])
 
+		// u0 = next (AppendStructuredBuffer NewSimulationState), u1 = current
+		// (ConsumeStructuredBuffer CurrentSimulationState). Every surviving
+		// particle moves from one to the other; a particle dies simply by
+		// being consumed and never appended, so the pool compacts itself.
+		// Both counters are kept rather than reset: `current`'s is the live
+		// count being drawn down, and `next`'s is already zero because last
+		// frame consumed that buffer empty.
 		keep_counts := [2]u32{0xffffffff, 0xffffffff}
 		update_uavs := [2]^d3d11.IUnorderedAccessView{scene.particle_uav[next], scene.particle_uav[current]}
 		ctx->CSSetShader(scene.update_cs, nil, 0)
@@ -582,13 +622,20 @@ main :: proc() {
 		ctx->CSSetUnorderedAccessViews(0, 2, &update_uavs[0], &keep_counts[0])
 		ctx->Dispatch(PARTICLE_COUNT / 512, 1, 1)
 
-		// Unbind the UAVs and latch the survivor count into the indirect
-		// arguments buffer for rendering.
+		// Unbind the UAVs — `next` is about to be read as an SRV by the render
+		// VS, and nothing can be an SRV and a UAV at the same time. Then the
+		// same CopyStructureCount trick again, this time into slot 0 of the
+		// indirect args buffer, so the draw call's vertex count is whatever
+		// the update pass happened to append. The CPU never learns how many
+		// particles are alive.
 		null_uavs := [2]^d3d11.IUnorderedAccessView{nil, nil}
 		ctx->CSSetUnorderedAccessViews(0, 2, &null_uavs[0], nil)
 		ctx->CopyStructureCount(scene.args_buf, 0, scene.particle_uav[next])
 
 		// DEBUG: read back both buffers' hidden counters once per second.
+		// Mirrors the C++'s bDebugActive path, kept behind a compile-time
+		// flag because the Map forces a full CPU/GPU sync — exactly the stall
+		// the CopyStructureCount plumbing above exists to avoid.
 		when #config(DEBUG_COUNTS, false) {
 			@(static) staging: ^d3d11.IBuffer
 			if staging == nil {
@@ -639,6 +686,10 @@ main :: proc() {
 		ctx->ClearRenderTargetView(r.rtv, &clear_color)
 		ctx->ClearDepthStencilView(depth.dsv, {.DEPTH}, 1.0, 0)
 
+		// No input layout and no vertex buffer — there is no CPU-side vertex
+		// data to describe. The VS takes only SV_VertexID and indexes the
+		// particle buffer with it, so the input assembler just needs to know
+		// it is emitting points.
 		ctx->IASetInputLayout(nil)
 		ctx->IASetPrimitiveTopology(.POINTLIST)
 		ctx->VSSetShader(scene.render_vs, nil, 0)
@@ -656,6 +707,8 @@ main :: proc() {
 		ctx->OMSetBlendState(scene.bs_additive, &blend_factor, 0xffffffff)
 		ctx->OMSetDepthStencilState(scene.ds_no_write, 0)
 		ctx->RSSetState(nil)
+		// Vertex count comes from args_buf, which the GPU wrote moments ago;
+		// this call is recorded without the CPU knowing what it will draw.
 		ctx->DrawInstancedIndirect(scene.args_buf, 0)
 
 		// Unbind so next frame's compute passes can take the buffer as UAV.

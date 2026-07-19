@@ -44,6 +44,11 @@ HEIGHT :: 600
 
 // --- cbuffer mirrors ---------------------------------------------------------
 
+// The book's shaders are row-vector HLSL (`mul(v, M)`), but these are
+// column-vector Odin matrices. No transpose is needed: glyph:shader compiles
+// with D3DCOMPILE_PACK_MATRIX_ROW_MAJOR, so HLSL reads the column-major
+// bytes as M-transposed and the two conventions cancel. Hence the natural
+// `proj * view * world` in draw_object.
 World_Transforms :: struct #align (16) {
 	world:           matrix[4, 4]f32,
 	world_view_proj: matrix[4, 4]f32,
@@ -60,6 +65,10 @@ Scene_Info :: struct #align (16) {
 	view_position: [4]f32,
 }
 
+// PBRMaterialParameters. object_material is (roughness, metallic, 0, 0) in
+// the UE4-style PS. object_albedo is set here to match the C++ SetDiffuse
+// calls but the vertex-color/textured pixel shaders never read it — albedo
+// comes from the vertex COLOR (or the sampled texture) instead.
 Pbr_Material :: struct #align (16) {
 	object_albedo:   [4]f32,
 	object_material: [4]f32,
@@ -137,6 +146,8 @@ message_callback :: proc(data: rawptr, hwnd: win32.HWND, msg: win32.UINT, wparam
 		state.last_mouse = {x, y}
 		state.mouse_valid = true
 
+	// Invalidate on both the press and the release so the first move after a
+	// button transition does not produce a jump from a stale last_mouse.
 	case win32.WM_RBUTTONDOWN, win32.WM_RBUTTONUP:
 		state.mouse_valid = false
 
@@ -235,6 +246,9 @@ dynamic_cbuffer :: proc(device: ^d3d11.IDevice, byte_width: u32) -> (buffer: ^d3
 	return buffer, true
 }
 
+// WRITE_DISCARD (never NO_OVERWRITE) on every cbuffer write: the driver
+// hands back a fresh region and renames the buffer, so overwriting one that
+// earlier draws in this frame still reference costs no stall.
 write_cbuffer :: proc(ctx: ^d3d11.IDeviceContext, buffer: ^d3d11.IBuffer, value: ^$T) {
 	mapped: d3d11.MAPPED_SUBRESOURCE
 	if ctx->Map((^d3d11.IResource)(buffer), 0, .WRITE_DISCARD, {}, &mapped) >= 0 {
@@ -381,7 +395,10 @@ build_scene :: proc() -> (grid, shapes, stl_object, curve: Scene_Object) {
 		object_material = {0.3, 0, 0, 0}, // GeometryActor default
 	}
 
-	// Shape collection (transparent material → alpha pass).
+	// Shape collection (transparent material → alpha pass). All five shapes
+	// share one mesh and therefore one draw call, so they blend strictly in
+	// the order appended here, with no depth sorting — same as the C++, where
+	// only the sphere is actually translucent (alpha 0.5).
 	mesh_init(&shapes.mesh, .TRIANGLELIST)
 	shapes.mesh.color = {1, 0, 0, 0.5}
 	draw_sphere(&shapes.mesh, {2.5, 2, 0}, 1.5, 16, 24)
@@ -402,10 +419,14 @@ build_scene :: proc() -> (grid, shapes, stl_object, curve: Scene_Object) {
 	}
 
 	// STL mesh actor: triangle soup with per-face normals, color (0,1,0,0).
+	// The alpha of 0 is preserved from the C++; it is harmless because this
+	// object draws in the opaque pass, where blending is off.
 	mesh_init(&stl_object.mesh, .TRIANGLELIST)
 	stl_object.mesh.color = {0, 1, 0, 0}
 	faces := stl_load("MeshedReconstruction.stl")
 	defer delete(faces)
+	// The C++ uses a non-indexed DrawExecutorDX11 here; this port has only the
+	// indexed path, so it emits the trivial 0,1,2,... index run.
 	i: u32 = 0
 	for face in faces {
 		add_vertex_normal(&stl_object.mesh, face.v0, face.normal)
@@ -447,6 +468,9 @@ rebuild_grid :: proc(m: ^Immediate_Mesh, runtime: f32) {
 
 	scaling := 0.25 * math.sin(runtime * 0.75)
 
+	// Discards last frame's vertices/indices outright and marks the mesh
+	// dirty; mesh_commit then re-uploads both buffers. This is the chapter's
+	// point — geometry is redefined per frame rather than baked once.
 	mesh_reset(m)
 	m.color = {1, 1, 1, 1}
 
@@ -459,6 +483,9 @@ rebuild_grid :: proc(m: ^Immediate_Mesh, runtime: f32) {
 			vz := fz - f32(GRIDSIZE / 2)
 			vy := (5.0 - 0.2 * (vx * vx + vz * vz)) * scaling
 
+			// AddVertex(position, texcoords) leaves the normal at the default
+			// (0,1,0) — preserved: the paraboloid is lit as if flat, so the
+			// PBR highlight sweeps the whole surface uniformly.
 			uv := [2]f32{fx / (FGRIDSIZE - 1), 1.0 - fz / (FGRIDSIZE - 1)}
 			add_vertex_tex(m, [3]f32{vx, vy, vz} * FSIZESCALE, uv)
 		}
@@ -486,6 +513,9 @@ draw_object :: proc(
 	view, proj: matrix[4, 4]f32,
 	t: f32,
 ) {
+	// An empty mesh is a legitimate state, not an error — a missing model file
+	// yields zero triangles and simply draws nothing, exactly as the C++ does
+	// for the absent Capsule.obj.
 	if o.mesh.index_buffer == nil || len(o.mesh.indices) == 0 {
 		return
 	}
@@ -576,7 +606,7 @@ main :: proc() {
 	ctx := r.ctx
 	start := time.tick_now()
 	last_frame := start
-	screenshot_number := 100_000
+	screenshot_number := 100_000 // 6 digits so filenames sort lexically
 
 	null_srv: ^d3d11.IShaderResourceView
 
@@ -604,7 +634,12 @@ main :: proc() {
 			proj = camera.perspective_fov_lh(math.PI / 4, f32(r.width) / f32(r.height), 0.1, 1000.0)
 		}
 
-		// App::HandleEvent keys 1/2/3: off-center projections.
+		// App::HandleEvent keys 1/2/3: off-center projections. These specify
+		// the frustum window directly on the near plane instead of by fov and
+		// aspect, so 2 and 3 sit entirely to one side of the view axis — the
+		// asymmetric frustum used for split/stereo views. They ignore the
+		// window aspect ratio, so the image stretches on a non-4:3 window;
+		// that is the C++ behaviour too.
 		if state.projection_key != 0 {
 			switch state.projection_key {
 			case '1':
@@ -620,12 +655,18 @@ main :: proc() {
 		camera_update(&cam, &state.input, dt)
 		view := camera_view_matrix(&cam)
 
-		// Controllers: the point light circles at radius 50, height 50.
+		// Controllers: the point light circles at radius 50, height 50. This
+		// flattens the C++ two-level transform — the rotating node at
+		// (0,50,0) with the light body offset to (50,0,0) — into one
+		// rotate-then-translate.
 		light_angle := -runtime_s
 		light_pos_3 := linalg.matrix3_rotate_f32(light_angle, [3]f32{0, 1, 0}) * [3]f32{50, 0, 0} + {0, 50, 0}
 
 		rebuild_grid(&grid.mesh, runtime_s)
 
+		// All Map calls happen before any draw is issued this frame. Only the
+		// grid is actually dirty after the first frame; the other three
+		// commits fall straight through and keep their buffers.
 		mesh_commit(&grid.mesh, r.device, ctx)
 		mesh_commit(&shapes.mesh, r.device, ctx)
 		mesh_commit(&stl_object.mesh, r.device, ctx)
@@ -663,7 +704,11 @@ main :: proc() {
 		draw_object(ctx, &pipeline, &stl_object, view, proj, runtime_s)
 		draw_object(ctx, &pipeline, &curve, view, proj, runtime_s)
 
-		// Skybox (SkyboxActor): its own shader pair and cbuffer.
+		// Skybox (SkyboxActor): its own shader pair and cbuffer. Drawn after
+		// the opaque geometry rather than first, so most of it is already
+		// depth-rejected; the cube is translated to the camera and its depth
+		// pinned at the far plane in the VS, which is why it needs the
+		// LESS_EQUAL state to survive the 1.0 depth clear.
 		skybox_data := Skybox_Data {
 			view          = view,
 			proj          = proj,
@@ -682,11 +727,18 @@ main :: proc() {
 		ctx->PSSetShaderResources(0, 1, &pipeline.skybox_srv)
 		ctx->OMSetDepthStencilState(pipeline.skybox_depth, 0)
 		ctx->DrawIndexed(u32(len(skybox_indices)), 0, 0)
+		// Restore what the skybox displaced: default depth state, the shared
+		// WorldTransforms cbuffer at VS b0, and t0 cleared so the cube map is
+		// not left bound where the textured material expects the 2D grid
+		// texture.
 		ctx->OMSetDepthStencilState(nil, 0)
 		ctx->VSSetConstantBuffers(0, 1, &pipeline.cb_world)
 		ctx->PSSetShaderResources(0, 1, &null_srv)
 
-		// ALPHA pass: the transparent shape collection.
+		// ALPHA pass: the transparent shape collection, drawn last so it
+		// blends over finished opaque geometry and the skybox. Depth writes
+		// stay on (the C++ leaves them on too), so the shapes occlude each
+		// other rather than blending among themselves in depth order.
 		blend_factor := [4]f32{1, 1, 1, 1}
 		ctx->OMSetBlendState(pipeline.alpha_blend, &blend_factor, 0xffffffff)
 		draw_object(ctx, &pipeline, &shapes, view, proj, runtime_s)

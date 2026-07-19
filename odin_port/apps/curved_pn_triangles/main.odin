@@ -43,10 +43,20 @@ Transforms :: struct #align (16) {
 	inv_tpose_world:  matrix[4, 4]f32,
 }
 
+// xyz are the three SV_TessFactor edges, w the single SV_InsideTessFactor;
+// the app writes the same slider value into all four. hsConstantFunc
+// multiplies each by sign(0.2 + dot(faceNormal, viewDirection)), so
+// back-facing patches get a negative factor and the tessellator culls the
+// whole patch.
 Tessellation_Parameters :: struct #align (16) {
 	edge_factors: [4]f32,
 }
 
+// Used two ways: the hull constant function takes look_at - position as the
+// view direction for the back-face test, and the DS lights with
+// normalize(cameraPosition) — i.e. it treats the camera's POSITION as a
+// light direction. Preserved; it is why the shading swings as the camera
+// orbits.
 Rendering_Parameters :: struct #align (16) {
 	camera_position: [3]f32,
 	_pad0:           f32,
@@ -155,6 +165,17 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 
 	vs_blob := shader.compile("CurvedPointNormalTriangles.hlsl", "vsMain", "vs_5_0") or_return
 	defer vs_blob->Release()
+	// Both hull shaders take a 3-point input patch and emit 13 output control
+	// points — the cubic Bezier PN triangle. The control-point phase runs
+	// once per output point and switches on SV_OutputControlPointID: 0-2 are
+	// the original vertices b300/b030/b003; 3-8 are the two tangent points
+	// per edge, each the source vertex nudged a third of the way along the
+	// edge and then projected onto that vertex's tangent plane (hence the
+	// dot-with-normal term in ComputeEdgePosition); 9 is the centre b111,
+	// the average E of those six edge points pushed a further (E - V) / 2
+	// away from the flat centroid V. Points 10-12 carry no position, only
+	// the quadratically-varying edge NORMALS, which is what lets the DS
+	// shade a curved surface instead of a faceted one.
 	hs_default_blob := shader.compile("CurvedPointNormalTriangles.hlsl", "hsDefault", "hs_5_0") or_return
 	defer hs_default_blob->Release()
 	hs_sil_blob := shader.compile("CurvedPointNormalTriangles.hlsl", "hsSilhouette", "hs_5_0") or_return
@@ -287,6 +308,9 @@ main :: proc() {
 			state.toggle_hull = false
 			default_complexity = !default_complexity
 		}
+		// Both hull shaders hard-code [partitioning("fractional_even")], so
+		// the fractional part of this factor is meaningful and the surface
+		// refines smoothly rather than in whole-segment jumps.
 		for abs(state.adjust) >= 0.125 {
 			step: f32 = 0.25 if state.adjust > 0 else -0.25
 			state.adjust -= step
@@ -302,6 +326,8 @@ main :: proc() {
 		view := camera.look_at_lh(look_from, look_at, {0, 1, 0})
 		proj := camera.perspective_fov_lh(math.PI / 3.0, f32(WIDTH) / f32(HEIGHT), 1.0, 25.0)
 
+		// inv_tpose_world is identity here and the VS ignores it anyway (the
+		// mInvTposeWorld line is commented out in the HLSL) — preserved.
 		transforms := Transforms {
 			world           = 1,
 			view_proj       = proj * view,
@@ -327,6 +353,10 @@ main :: proc() {
 		offset: u32 = 0
 		ctx->IASetVertexBuffers(0, 1, &scene.vertex_buffer, &stride, &offset)
 		ctx->IASetIndexBuffer(scene.index_buffer, .R32_UINT, 0)
+		// Each mesh triangle becomes one 3-control-point patch: the index
+		// buffer is unchanged, only the interpretation differs from a plain
+		// TRIANGLELIST. hsSilhouette wants 6 points here (see the header);
+		// this topology is why it never draws.
 		ctx->IASetPrimitiveTopology(._3_CONTROL_POINT_PATCHLIST)
 
 		hs_cbuffers := [2]^d3d11.IBuffer{scene.cb_tess, scene.cb_rendering}

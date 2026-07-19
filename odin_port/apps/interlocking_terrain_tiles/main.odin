@@ -50,6 +50,9 @@ Main_CB :: struct #align (16) {
 	inv_tpose_world: matrix[4, 4]f32,
 }
 
+// Only .x/.y of the two range vectors are used (zw pad to a register). A
+// patch midpoint at min_max_distance.x gets min_max_lod.y (full detail) and
+// one at .y gets min_max_lod.x, lerped linearly in between.
 Patch_CB :: struct #align (16) {
 	camera_position:  [4]f32,
 	min_max_distance: [4]f32,
@@ -177,6 +180,9 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 
 	vs_blob := shader.compile("InterlockingTerrainTiles.hlsl", "vsMain", "vs_5_0") or_return
 	defer vs_blob->Release()
+	// Both hull shaders are [partitioning("fractional_odd")]: LOD varies
+	// continuously with distance, so integer partitioning would make whole
+	// rings of the terrain pop as the camera moves.
 	hs_simple_blob := shader.compile("InterlockingTerrainTiles.hlsl", "hsSimple", "hs_5_0") or_return
 	defer hs_simple_blob->Release()
 	hs_complex_blob := shader.compile("InterlockingTerrainTiles.hlsl", "hsComplex", "hs_5_0") or_return
@@ -225,9 +231,31 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 
 	indices: [dynamic]u32
 	defer delete(indices)
+	// Preserved C++ index math: the grid is FILLED as [x + z * stride] but
+	// INDEXED as [z + x * stride], so the patch's u/v axes come out
+	// transposed relative to the fill loop. Harmless on a square grid with
+	// symmetric texcoords, but don't "fix" one side without the other.
+	// The clamp is what makes border tiles work: a neighbour point that
+	// would fall off the grid collapses onto the nearest real vertex, so the
+	// edge's midpoint (and therefore its LOD) is well defined everywhere.
 	idx :: proc(z, x: int) -> u32 {
 		return u32(clamp(z, 0, TERRAIN_Z_LEN) + clamp(x, 0, TERRAIN_X_LEN) * (TERRAIN_X_LEN + 1))
 	}
+	// The 12 control points of one tile, in the order hsPerPatch expects:
+	//   0-3   the tile's own four corners (the only points the DS ever
+	//         interpolates — [outputcontrolpoints(4)] discards 4-11 after
+	//         the patch-constant phase has used them)
+	//   4-5   the far edge of the +x neighbour
+	//   6-7   the far edge of the +z neighbour
+	//   8-9   the far edge of the -x neighbour
+	//   10-11 the far edge of the -z neighbour
+	// Each neighbour's two extra points plus two shared corners give
+	// hsPerPatch enough to compute that neighbour's midpoint and hence its
+	// LOD, WITHOUT any cross-patch communication. Each shared edge factor is
+	// then min(own LOD, neighbour LOD) — a symmetric function, so both tiles
+	// independently compute the SAME factor for the edge they share and the
+	// tessellator emits matching vertices on both sides. That is what makes
+	// the seams crack-free, and it is the entire point of the sample.
 	for x in 0 ..< TERRAIN_X_LEN {
 		for z in 0 ..< TERRAIN_Z_LEN {
 			append(&indices, idx(z + 0, x + 0))
@@ -425,6 +453,9 @@ main :: proc() {
 		}
 		write_cbuffer(ctx, scene.cb_patch, &patch_cb)
 		sample_cb := Sample_Params_CB {
+			// xy = height-map pixel size (the DS's Sobel filter steps by
+			// 1/xy to derive normals); zw = tile counts, used only by
+			// hsComplex to decode SV_PrimitiveID into a lookup coordinate.
 			height_map_dimensions = {scene.height_dims.x, scene.height_dims.y, TERRAIN_X_LEN, TERRAIN_Z_LEN},
 		}
 		write_cbuffer(ctx, scene.cb_sample, &sample_cb)
@@ -438,6 +469,10 @@ main :: proc() {
 		offset: u32 = 0
 		ctx->IASetVertexBuffers(0, 1, &scene.vertex_buffer, &stride, &offset)
 		ctx->IASetIndexBuffer(scene.index_buffer, .R32_UINT, 0)
+		// 12 points in, 4 out: both hull shaders declare
+		// [outputcontrolpoints(4)] over a quad domain, so the DS sees a plain
+		// bilinear quad and the 8 neighbour points exist only to feed the
+		// patch-constant LOD calculation.
 		ctx->IASetPrimitiveTopology(._12_CONTROL_POINT_PATCHLIST)
 
 		hs_cbuffers := [2]^d3d11.IBuffer{scene.cb_patch, scene.cb_sample}
@@ -446,8 +481,11 @@ main :: proc() {
 		ctx->VSSetConstantBuffers(0, 1, &scene.cb_main)
 		ctx->HSSetShader(scene.hs_simple if simple_complexity else scene.hs_complex, nil, 0)
 		ctx->HSSetConstantBuffers(0, 2, &hs_cbuffers[0])
-		// The hull LOD helpers sample the height map; texLODLookup (t1)
-		// stays unbound, as in the C++.
+		// t0 is bound for symmetry with the DS; the hull constant functions
+		// actually derive LOD from control-point positions, not the height
+		// map. texLODLookup (t1) stays unbound, as in the C++ — hsComplex's
+		// ReadLookup therefore returns zeros, giving every patch the minimum
+		// LOD, so 'L' visibly flattens the terrain rather than refining it.
 		ctx->HSSetShaderResources(0, 1, &scene.height_srv)
 		ctx->HSSetSamplers(0, 1, &scene.sampler)
 		ctx->DSSetShader(scene.domain_shaders[shading], nil, 0)

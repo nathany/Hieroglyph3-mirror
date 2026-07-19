@@ -69,7 +69,13 @@ Transforms_CB :: struct #align (16) {
 	world_view_proj: matrix[4, 4]f32,
 }
 
-// LightsLP `CameraParams` (b0 in the light VS, GS, and PS).
+// LightsLP `CameraParams` (b0 in the light VS, GS, and PS). The GS and PS
+// index the projection matrix by literal [row][col] — ProjMatrix[0][0] and
+// [1][1] for the quad fit, [2][2]/[3][2] to linearize depth — which only
+// lands on the right elements because shaders here compile with
+// PACK_MATRIX_ROW_MAJOR, so HLSL reads these column-vector Odin matrices as
+// their row-vector transposes (see glyph/shader). Same reason `inv_proj` can
+// be a plain linalg.inverse and the GS's row-vector mul() works unchanged.
 Camera_CB :: struct #align (16) {
 	view:        matrix[4, 4]f32,
 	proj:        matrix[4, 4]f32,
@@ -100,6 +106,8 @@ Light_Vertex :: struct {
 	type:        i32, // 0 = point; the only type the app ever adds
 }
 
+// sizeof(LightParams) — also the vertex stride, so the unread trailing type
+// is simply stepped over per light.
 #assert(size_of(Light_Vertex) == 52)
 
 // The mask pass's fullscreen quad (GeometryGeneratorDX11::GenerateFullScreenQuad).
@@ -135,6 +143,8 @@ compute_tangent_frame :: proc(vertices: []Scene_Vertex, indices: []u32) {
 		t1 := w2.y - w1.y
 		t2 := w3.y - w1.y
 
+		// No guard against a degenerate UV triangle (r = inf) — preserved
+		// from the C++, which also divides unconditionally.
 		r := 1.0 / (s1 * t2 - s2 * t1)
 		s_dir := (e1 * t2 - e2 * t1) * r
 		t_dir := (e2 * s1 - e1 * s2) * r
@@ -152,6 +162,9 @@ compute_tangent_frame :: proc(vertices: []Scene_Vertex, indices: []u32) {
 		t := tangents[i]
 
 		// Gram-Schmidt orthogonalize, then handedness from the bitangent.
+		// Note the sign test uses the raw accumulated `t`, not the
+		// orthogonalized `tangent` — preserved from the C++. GBufferLP's VS
+		// consumes .w as the multiplier on cross(normalVS, tangentVS).
 		tangent := linalg.normalize(t - n * linalg.dot(n, t))
 		sign: f32 = -1.0 if linalg.dot(linalg.cross(n, t), bitangents[i]) < 0 else 1.0
 		v.tangent = {tangent.x, tangent.y, tangent.z, sign}
@@ -338,12 +351,15 @@ targets_create :: proc(device: ^d3d11.IDevice, width, height: u32) -> (t: Target
 	dsv_desc.Flags = {.DEPTH, .STENCIL} // D3D11_DSV_READ_ONLY_DEPTH | _STENCIL
 	if device->CreateDepthStencilView((^d3d11.IResource)(t.depth_tex), &dsv_desc, &t.depth_dsv_ro) < 0 {return}
 
+	// Reads back only the 24-bit depth channel (LightsLP declares
+	// Texture2DMS<float>); the stencil byte isn't visible through this view.
 	depth_srv_desc := d3d11.SHADER_RESOURCE_VIEW_DESC {
 		Format        = .R24_UNORM_X8_TYPELESS,
 		ViewDimension = .TEXTURE2DMS,
 	}
 	if device->CreateShaderResourceView((^d3d11.IResource)(t.depth_tex), &depth_srv_desc, &t.depth_srv) < 0 {return}
 
+	// ResolveSubresource's destination: same format, Count = 1.
 	resolve_desc := d3d11.TEXTURE2D_DESC {
 		Width      = width,
 		Height     = height,
@@ -362,6 +378,8 @@ targets_create :: proc(device: ^d3d11.IDevice, width, height: u32) -> (t: Target
 
 // --- scene / pipeline objects ------------------------------------------------
 
+// Stands in for ViewLightPrepassRenderer's SpriteRenderer::Render of the
+// resolved target: a bufferless fullscreen triangle driven by SV_VertexID.
 BLIT_HLSL :: `
 Texture2D BlitTexture : register( t0 );
 SamplerState BlitSampler : register( s0 );
@@ -509,6 +527,9 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	mask_ps_blob := shader.compile("MaskLP.hlsl", "PSMain", "ps_5_0") or_return
 	defer mask_ps_blob->Release()
 
+	// ViewLights builds each effect with POINTLIGHT/SPOTLIGHT/DIRECTIONALLIGHT
+	// as 1/0/0; under LightsLP's `#if` tests defining POINTLIGHT alone is
+	// equivalent. PSMain/PSMainPerSample are ViewLights' effects[0]/effects[1].
 	point_defines := [1]cstring{"POINTLIGHT"}
 	light_vs_blob := shader.compile_defines("LightsLP.hlsl", "VSMain", "vs_5_0", point_defines[:]) or_return
 	defer light_vs_blob->Release()
@@ -630,6 +651,9 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	}
 	if device->CreateBuffer(&light_vb_desc, nil, &s.light_vb) < 0 {return}
 
+	// DIRECTION and SPOTANGLES aren't read by the POINTLIGHT VSInput, but the
+	// C++ builds all three light input layouts from one element list and D3D
+	// permits elements the shader ignores — kept for the same correspondence.
 	light_elements := [5]d3d11.INPUT_ELEMENT_DESC{
 		{"POSITION", 0, .R32G32B32_FLOAT, 0, 0, .VERTEX_DATA, 0},
 		{"COLOR", 0, .R32G32B32_FLOAT, 0, 12, .VERTEX_DATA, 0},
@@ -639,7 +663,10 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	}
 	if device->CreateInputLayout(&light_elements[0], 5, light_vs_blob->GetBufferPointer(), light_vs_blob->GetBufferSize(), &s.light_layout) < 0 {return}
 
-	// Depth-stencil states.
+	// Depth-stencil states. Each is the previous desc mutated in place, so
+	// unmentioned fields carry over — the same incremental reuse of one
+	// DepthStencilStateConfigDX11 the C++ does in App::Initialize and the
+	// ViewGBuffer/ViewLights constructors.
 	// G-Buffer: depth LESS + write, stencil ALWAYS/REPLACE (ref 1).
 	ds_desc := d3d11.DEPTH_STENCIL_DESC {
 		DepthEnable = true,
@@ -653,7 +680,10 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	ds_desc.BackFace = ds_desc.FrontFace
 	if device->CreateDepthStencilState(&ds_desc, &s.ds_gbuffer) < 0 {return}
 
-	// Mask: depth off, stencil EQUAL/INCR (ref 1 → edge pixels become 2).
+	// Mask (ViewGBuffer::m_iMaskDSState): depth off, stencil EQUAL/INCR at
+	// ref 1, so only pixels the G-Buffer pass stenciled can increment; MaskLP
+	// clip()s every pixel whose four G-Buffer .w samples sum to zero, leaving
+	// 1 on interior pixels and 2 on edge pixels.
 	ds_desc.DepthEnable = false
 	ds_desc.DepthWriteMask = .ZERO
 	ds_desc.DepthFunc = .ALWAYS
@@ -661,7 +691,11 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	ds_desc.BackFace = ds_desc.FrontFace
 	if device->CreateDepthStencilState(&ds_desc, &s.ds_mask) < 0 {return}
 
-	// Lights (point): depth GREATER_EQUAL no-write, stencil EQUAL read-only.
+	// Lights (ViewLights::m_iGreaterThanDSState). GREATER_EQUAL is the whole
+	// trick: the GS places the quad at the light sphere's *far* depth, so the
+	// test only passes where scene geometry sits at or beyond it — where the
+	// volume actually meets a surface rather than floating in empty air.
+	// StencilWriteMask 0 keeps the 1/2 mask intact across both light draws.
 	ds_desc.DepthEnable = true
 	ds_desc.DepthFunc = .GREATER_EQUAL
 	ds_desc.StencilWriteMask = 0
@@ -669,7 +703,8 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	ds_desc.BackFace = ds_desc.FrontFace
 	if device->CreateDepthStencilState(&ds_desc, &s.ds_light) < 0 {return}
 
-	// Final pass: depth LESS_EQUAL no-write, stencil off.
+	// Final pass: LESS_EQUAL so the re-rasterized geometry exactly re-passes
+	// the depths pass 1 wrote; no writes, stencil off.
 	ds_desc.DepthFunc = .LESS_EQUAL
 	ds_desc.StencilEnable = false
 	if device->CreateDepthStencilState(&ds_desc, &s.ds_final) < 0 {return}
@@ -839,6 +874,9 @@ main :: proc() {
 		}
 
 		if state.pending_resize.x != 0 && state.pending_resize.y != 0 {
+			// Everything is torn down and rebuilt, so the C++'s special case
+			// (ViewLightPrepassRenderer::Resize hand-resizing the read-only
+			// depth target's SRV and DSV) has no counterpart here.
 			renderer.resize(&r, state.pending_resize.x, state.pending_resize.y)
 			targets_destroy(&targets)
 			resize_ok: bool
@@ -866,6 +904,8 @@ main :: proc() {
 		rotation_angle += dt * 0.2
 		world := linalg.matrix4_rotate_f32(rotation_angle, {0, 1, 0})
 
+		// Column-vector composition (the C++ multiplies the other way round);
+		// the shaders' row-vector mul() still lines up — see Camera_CB.
 		transforms := Transforms_CB {
 			world           = world,
 			world_view      = view * world,
@@ -897,6 +937,10 @@ main :: proc() {
 		}
 		ctx->RSSetViewports(1, &viewport)
 		clear_color := [4]f32{0, 0, 0, 0}
+		// Each pass ends by nulling t0..t1 so the next pass can bind those
+		// same textures as render targets — D3D11 will not let a resource be
+		// SRV and RTV/DSV at once. The one deliberate exception is the depth
+		// buffer, legal via depth_dsv_ro below.
 		null_srvs := [2]^d3d11.IShaderResourceView{nil, nil}
 
 		// --- 1. G-Buffer pass (ViewGBuffer) --------------------------------
@@ -912,18 +956,20 @@ main :: proc() {
 		ctx->IASetPrimitiveTopology(.TRIANGLELIST)
 		ctx->VSSetShader(scene.gbuffer_vs, nil, 0)
 		ctx->VSSetConstantBuffers(0, 1, &scene.cb_transforms)
-		ctx->GSSetShader(nil, nil, 0)
+		ctx->GSSetShader(nil, nil, 0) // last frame's light GS is still bound
 		ctx->PSSetShader(scene.gbuffer_ps, nil, 0)
 		ctx->PSSetShaderResources(0, 1, &scene.normal_srv)
 		ctx->PSSetSamplers(0, 1, &scene.sampler_aniso)
-		ctx->OMSetDepthStencilState(scene.ds_gbuffer, 1)
+		ctx->OMSetDepthStencilState(scene.ds_gbuffer, 1) // ref 1 = the REPLACE value
 		ctx->OMSetBlendState(nil, nil, 0xffffffff)
 		ctx->RSSetState(scene.rs_msaa)
 		ctx->DrawIndexed(scene.index_count, 0, 0)
 
 		// --- 2. Stencil mask pass (MaskLP on a fullscreen quad) ------------
 		// Depth-stencil only — no color target. Edge pixels (G-Buffer .w
-		// nonzero in any sample) increment stencil 1 → 2.
+		// nonzero in any sample) increment stencil 1 → 2. MaskLP's PSMain
+		// still declares an SV_Target0; with no RTV bound that write is
+		// discarded and only the clip()/stencil side effect matters.
 		ctx->OMSetRenderTargets(0, nil, targets.depth_dsv)
 		ctx->PSSetShaderResources(0, 1, &targets.gbuffer_srv)
 
@@ -941,10 +987,16 @@ main :: proc() {
 		// bound at the same time. Per-pixel shader at stencil ref 1, then
 		// the per-sample shader at ref 2 for the edge pixels.
 		ctx->PSSetShaderResources(0, 2, &null_srvs[0])
+		// Clear with no DSV bound, then re-bind adding the read-only one —
+		// the same two-step ViewLights::ExecuteTask performs, and it keeps
+		// the clear from touching the depth/stencil the earlier passes built.
 		ctx->OMSetRenderTargets(1, &targets.light_rtv, nil)
 		ctx->ClearRenderTargetView(targets.light_rtv, &clear_color)
 		ctx->OMSetRenderTargets(1, &targets.light_rtv, targets.depth_dsv_ro)
 
+		// depth_srv is the same texture as the DSV just bound; only the
+		// READ_ONLY_DEPTH|STENCIL flags on depth_dsv_ro make that legal.
+		// Both are Texture2DMS, so LightsLP Load()s a chosen sub-sample.
 		light_srvs := [2]^d3d11.IShaderResourceView{targets.gbuffer_srv, targets.depth_srv}
 		ctx->PSSetShaderResources(0, 2, &light_srvs[0])
 
@@ -960,10 +1012,15 @@ main :: proc() {
 		blend_factor := [4]f32{0, 0, 0, 0}
 		ctx->OMSetBlendState(scene.bs_additive, &blend_factor, 0xffffffff)
 
+		// Interior pixels (stencil == 1): shade once from sub-sample 0.
 		ctx->PSSetShader(scene.light_ps, nil, 0)
 		ctx->OMSetDepthStencilState(scene.ds_light, 1)
 		ctx->Draw(u32(len(lights)), 0)
 
+		// Edge pixels (stencil == 2): PSMainPerSample takes SV_SampleIndex, so
+		// the hardware promotes it to per-sample frequency and each covered
+		// sample gets its own lighting value in the MSAA light buffer — which
+		// is exactly what the final pass then picks from per SV_Coverage.
 		ctx->PSSetShader(scene.light_ps_sample, nil, 0)
 		ctx->OMSetDepthStencilState(scene.ds_light, 2)
 		ctx->Draw(u32(len(lights)), 0)
@@ -972,6 +1029,10 @@ main :: proc() {
 		ctx->OMSetBlendState(nil, nil, 0xffffffff)
 
 		// --- 4. Final pass (ViewFinalPass) ---------------------------------
+		// The geometry is rasterized a second time so the PS gets a real
+		// SV_Coverage; it reads only the light-buffer samples this triangle
+		// actually covers and averages them, which is where the MSAA edge
+		// quality comes from. Depth is read-only again (ds_final, LESS_EQUAL).
 		ctx->PSSetShaderResources(0, 2, &null_srvs[0])
 		ctx->OMSetRenderTargets(1, &targets.final_rtv, nil)
 		ctx->ClearRenderTargetView(targets.final_rtv, &clear_color)
@@ -980,6 +1041,8 @@ main :: proc() {
 		final_srvs := [2]^d3d11.IShaderResourceView{scene.diffuse_srv, targets.light_srv}
 		ctx->PSSetShaderResources(0, 2, &final_srvs[0])
 
+		// Same layout/stride as pass 1: FinalPassLP's VSInput reads only
+		// POSITION and TEXCOORDS0, the leading prefix of Scene_Vertex.
 		ctx->IASetInputLayout(scene.scene_layout)
 		ctx->IASetVertexBuffers(0, 1, &scene.vertex_buffer, &stride, &offset)
 		ctx->IASetIndexBuffer(scene.index_buffer, .R32_UINT, 0)
@@ -995,6 +1058,8 @@ main :: proc() {
 		ctx->PSSetShaderResources(0, 2, &null_srvs[0])
 		ctx->OMSetRenderTargets(1, &r.rtv, nil)
 		ctx->ClearRenderTargetView(r.rtv, &clear_color)
+		// Switching to the backbuffer first unbinds final_rtv, which the
+		// resolve source requires. Mirrors ViewLightPrepassRenderer::ExecuteTask.
 		ctx->ResolveSubresource(
 			(^d3d11.IResource)(targets.resolve_tex), 0,
 			(^d3d11.IResource)(targets.final_tex), 0,
@@ -1008,7 +1073,7 @@ main :: proc() {
 		ctx->PSSetShaderResources(0, 1, &targets.resolve_srv)
 		ctx->PSSetSamplers(0, 1, &scene.sampler_blit)
 		ctx->OMSetDepthStencilState(nil, 0)
-		ctx->RSSetState(nil)
+		ctx->RSSetState(nil) // default state: no MultisampleEnable, matching the 1x backbuffer
 		ctx->Draw(3, 0)
 		ctx->PSSetShaderResources(0, 2, &null_srvs[0])
 

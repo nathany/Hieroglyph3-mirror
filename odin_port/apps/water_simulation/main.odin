@@ -50,6 +50,16 @@ FAR_CLIP :: 1000.0
 
 // App::Initialize dispatch dimensions: 16x16 groups of 16x16 simulation
 // points; the plane has one vertex per point.
+//
+// Note the group *thread* count is 18x18, not 16x16 (WaterSimulation.hlsl's
+// padded_x/padded_y): the interior 16x16 threads own one grid cell each, and
+// the extra one-cell perimeter exists only to stage neighbor state into
+// groupshared memory. Each cell's height update needs the flow values of its
+// left/upper-left/top/top-right neighbors, which for edge cells live in the
+// adjacent group — so without the halo those threads would have no data to
+// read. The shader guards the final store on 0 < GroupThreadID < 17 so the
+// perimeter threads compute but never write, otherwise every boundary cell
+// would be integrated twice.
 DISPATCH_X :: 16
 DISPATCH_Z :: 16
 POINTS_X :: DISPATCH_X * 16
@@ -76,6 +86,13 @@ Dispatch_CB :: struct #align (16) {
 
 // The GridPoint structured-buffer element (height + flow to the four
 // neighbors in the x/y/z/w directions).
+//
+// This is the chapter's pipe model: each cell is a water column connected to
+// its right/lower-right/below/lower-left neighbors by virtual pipes. Flow is
+// integrated from the height *difference* across each pipe (times a
+// gravity/area/length factor), then each height is integrated by the net flow
+// in and out. Flow carries over frame to frame, which is what gives the
+// surface inertia and makes waves propagate instead of just relaxing.
 Grid_Point :: struct {
 	height: f32,
 	flow:   [4]f32,
@@ -302,7 +319,14 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	if device->CreateVertexShader(plane_vs_blob->GetBufferPointer(), plane_vs_blob->GetBufferSize(), nil, &s.plane_vs) < 0 {return}
 	if device->CreatePixelShader(plane_ps_blob->GetBufferPointer(), plane_ps_blob->GetBufferSize(), nil, &s.plane_ps) < 0 {return}
 
-	// The two water state buffers, both starting from the same splash.
+	// The two water state buffers, both starting from the same splash. Two
+	// are needed because a cell's update reads its neighbors' *previous*
+	// state; updating in place would let a thread see a neighbor another
+	// group had already overwritten. So one buffer is bound read-only at t0
+	// and the other read-write at u0, and the roles swap each frame.
+	//
+	// Both are seeded so that whichever buffer happens to be read first shows
+	// the splash rather than zeros.
 	initial := build_initial_state()
 	defer delete(initial)
 
@@ -528,7 +552,15 @@ main :: proc() {
 		world := linalg.matrix4_rotate_f32(rotation_angle, {0, 1, 0}) * linalg.matrix4_translate_f32({-8 * DISPATCH_X, 0, -8 * DISPATCH_Z})
 
 		// --- 1. Simulation pass (ViewSimulation) ---------------------------
-		// App::Update doubles the elapsed time in TimeFactors.x.
+		// App::Update doubles the elapsed time in TimeFactors.x. The shader
+		// then clamps it with min(TimeFactors.x, 0.05) for the acceleration
+		// factor, so the *force* term is frame-rate limited but nothing else
+		// is: the 0.9995 damping factor multiplies the flow once per
+		// dispatch, not per second. One iteration per frame means the waves
+		// die off in proportion to frame count, so uncapped at thousands of
+		// FPS the surface flattens within a few seconds. That is preserved
+		// C++ behavior, not a porting bug — the original is equally
+		// frame-rate dependent, it just ran at a lower frame rate.
 		time_cb := Time_CB {
 			time_factors  = {dt * 2.0, f32(framerate), runtime, f32(frame_count)},
 			dispatch_size = {DISPATCH_X, DISPATCH_Z, POINTS_X, POINTS_Y},
@@ -543,8 +575,13 @@ main :: proc() {
 		ctx->CSSetConstantBuffers(0, 1, &scene.cb_time)
 		ctx->CSSetShaderResources(0, 1, &scene.water_srv[current])
 		ctx->CSSetUnorderedAccessViews(0, 1, &scene.water_uav[1 - current], nil)
+		// 16x16 groups, each 18x18 threads — 256x256 cells written by the
+		// 16x16 interior threads of each group.
 		ctx->Dispatch(DISPATCH_X, DISPATCH_Z, 1)
 
+		// The buffer just written becomes the visualization pass's SRV, so
+		// its UAV binding has to go first (a resource cannot be an SRV and a
+		// UAV at once).
 		ctx->CSSetShaderResources(0, 1, &null_srv[0])
 		ctx->CSSetUnorderedAccessViews(0, 1, &null_uav[0], nil)
 		current = 1 - current
@@ -577,6 +614,11 @@ main :: proc() {
 		ctx->VSSetShader(scene.plane_vs, nil, 0)
 		vs_cbuffers := [2]^d3d11.IBuffer{scene.cb_transforms, scene.cb_dispatch}
 		ctx->VSSetConstantBuffers(0, 2, &vs_cbuffers[0])
+		// The plane's vertex buffer carries a flat y=0 grid; the VS indexes
+		// this structured buffer by the vertex's texcoords and substitutes
+		// the simulated height, so the geometry never round-trips through the
+		// CPU and there is no heightmap texture at all. b1 (cb_dispatch)
+		// supplies the row stride it needs to flatten (x, y) into an index.
 		ctx->VSSetShaderResources(0, 1, &scene.water_srv[current])
 		ctx->PSSetShader(scene.plane_ps, nil, 0)
 		ctx->RSSetState(scene.rs_wireframe)

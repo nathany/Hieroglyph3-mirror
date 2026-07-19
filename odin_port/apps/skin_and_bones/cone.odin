@@ -21,6 +21,11 @@ Skinned_Vertex :: struct {
 
 // --- AnimationStream<Vector3f> ----------------------------------------------
 
+// Keyframes are stored as parallel time/value arrays; `frame` is the index of
+// the keyframe the stream is currently *leaving*, so the pair (frame,
+// frame+1) brackets `time`. A stream with a single keyframe has no bracket at
+// all and therefore stops on its very first update — that is how the position
+// streams here stay pinned at the bind offset.
 Anim_Stream :: struct {
 	times:   [dynamic]f32,
 	values:  [dynamic][3]f32,
@@ -38,6 +43,8 @@ anim_destroy :: proc(s: ^Anim_Stream) {
 anim_add :: proc(s: ^Anim_Stream, t: f32, v: [3]f32) {
 	append(&s.times, t)
 	append(&s.values, v)
+	// AddState seeds the current value from the first keyframe so the bind
+	// pose can be evaluated before any animation is played.
 	if len(s.times) == 1 {
 		s.current = v
 	}
@@ -99,6 +106,13 @@ anim_update :: proc(s: ^Anim_Stream, dt: f32) {
 
 // --- SkinnedBoneController / SkinnedActor ------------------------------------
 
+// One bone = one C++ Node3D plus the SkinnedBoneController attached to it.
+// The chain is flat: bone i's parent is bone i-1. `world` is rebuilt every
+// frame; `inv_bind` is captured once and never touched again.
+//
+// The C++ controller also carries a bind *rotation* (added to the rotation
+// stream's value the same way bind_position is added to the position
+// stream's). It is zero for every bone in this sample, so it is omitted.
 Bone :: struct {
 	bind_position: [3]f32,
 	pos_stream:    Anim_Stream,
@@ -144,6 +158,18 @@ bones_update :: proc(bones: []Bone, parent_world: matrix[4, 4]f32, dt: f32) {
 // SkinnedActor::SetBindPose: capture inverse bind matrices with the chain in
 // its bind configuration (the C++ does this before the app moves the actor
 // nodes, so the parent here is identity).
+//
+// That identity parent is load-bearing, not incidental. Because inv_bind is
+// captured with no node transform baked in, while the per-frame `world`
+// below IS built under the actor's node transform, the product world *
+// inv_bind carries the actor's translation and spin along with the bone's
+// own motion. The node transform therefore rides *inside* the skin matrices,
+// which is exactly why the shaders can ignore WorldMatrix. Capturing the
+// bind pose after positioning the actor would cancel that out and leave all
+// three actors stacked at the origin.
+//
+// dt is 0 so every stream reports its first keyframe; this stands in for the
+// C++ controller's "skip the first update to allow the bind pose to be read".
 bones_set_bind_pose :: proc(bones: []Bone) {
 	bones_update(bones, 1, 0)
 	for &b in bones {
@@ -153,6 +179,17 @@ bones_set_bind_pose :: proc(bones: []Bone) {
 
 // SkinnedBoneController::GetTransform / GetNormalTransform, column-vector:
 // skin = world * inv_bind; normal matrix = transpose(inverse(skin)).
+//
+// Read right to left: inv_bind lifts a vertex out of the bone's bind-pose
+// frame into bone-local space, then world puts it back down wherever the
+// bone has animated to. A bone that has not moved yields world == bind, so
+// skin collapses to identity and its vertices sit still — the property the
+// whole scheme rests on. The C++ writes the same product the other way round
+// (m_InvBindPose * WorldMatrix) because the engine is row-vector.
+//
+// The separate normal matrix is the inverse-transpose, needed because the
+// skin matrices are not pure rotations: they translate, and a chain of them
+// can shear, which would tilt normals the wrong way under a plain rotate.
 bone_skin_matrix :: proc(b: ^Bone) -> matrix[4, 4]f32 {
 	return b.world * b.inv_bind
 }
@@ -181,6 +218,11 @@ make_bones :: proc(num_bones: int, height: f32) -> (bones: [dynamic]Bone) {
 		}
 		anim_add(&b.pos_stream, 0, {0, 0, 0})
 		anim_add(&b.rot_stream, 0, {0, 0, 0})
+		// Every non-root bone runs the identical stream, so the small
+		// per-bone rotations compound down the chain and the tip swings much
+		// further than the base. The last keyframe returns to zero at t=6;
+		// after that the stream stops (play-once) and the cone holds its
+		// pose until 'A' replays it — preserved from the C++.
 		if i > 0 {
 			anim_add(&b.rot_stream, 1, {0.75, -0.25, 0})
 			anim_add(&b.rot_stream, 2, {-0.75, 0.25, 0})
@@ -228,6 +270,14 @@ generate_skinned_cone :: proc(
 			y := height - height_scale * height
 			z := math.sin(u_angle) * radius * height_scale
 
+			// Bone assignment by height: b0 is the band the vertex falls in,
+			// b1 the one above (clamped at the tip). The weights are already
+			// normalized by construction — w1 is the fraction into the band
+			// HALVED, so it only ever reaches 0.5, and w0 takes the rest.
+			// The truncation to a whole band means each vertex blends the two
+			// bones bracketing it and never more, matching the two populated
+			// lanes of bone_ids/weights (lanes z and w stay zero, and the
+			// shaders still evaluate them — weight 0 against bone 0).
 			b0 := min(int(y / bone_height_step), num_bones - 1)
 			b1 := min(b0 + 1, num_bones - 1)
 			w1 := (y / bone_height_step - f32(b0)) / 2.0
