@@ -69,10 +69,14 @@ Three pieces have to agree, and they do:
 1. **Builders** come from `d3d_math`, so matrices are laid out as the book prints
    them — translation in the bottom row.
 2. **Storage** is `#row_major`, matching the **packing** the shaders are compiled
-   with (`ShaderFactoryDX11` passes `D3DCOMPILE_PACK_MATRIX_ROW_MAJOR`; `glyph:shader`
-   does the same). The general rule: the shader sees your matrix *transposed* exactly
-   when field storage differs from the compile-time packing mode. Match them, as here,
-   and it sees precisely what you built — **no transposes anywhere**.
+   with. This is an FXC flag, not an Odin one: `D3DCOMPILE_PACK_MATRIX_ROW_MAJOR`,
+   passed by `ShaderFactoryDX11` in the engine and by `glyph:shader` here. It decides
+   whether HLSL reads a cbuffer's 16 floats as the matrix's rows or its columns —
+   visible in the generated code, where `mul(v, M)` becomes a `mul`/`mad` chain over
+   rows with the flag, and four `dp4`s against columns without it. The general rule:
+   the shader sees your matrix *transposed* exactly when field storage differs from
+   the packing mode. Match them, as here, and it sees precisely what you built —
+   **no transposes anywhere**. Drop the flag and every matrix arrives transposed.
 3. **Composition** runs left-to-right, `world * view * proj`, exactly as the C++ does.
 
 Everything then reads like the book: composition order, the printed matrix layouts,
@@ -98,7 +102,7 @@ instruction-identical to the column-major default, and `v * M` auto-vectorizes w
 | `M.Transpose()` | `linalg.transpose(m)` — accepts `#row_major` |
 | transform a point (`XMVector3TransformCoord`) | `([4]f32{p.x, p.y, p.z, 1} * m).xyz` |
 | `Vector3f` Normalize / Cross / Dot | `linalg.normalize` / `cross` / `dot` — arrays, convention-free |
-| cbuffer matrix field | `dm.Matrix4f32` (+ the compile flag) |
+| cbuffer matrix field | `dm.Matrix4f32` — pairs with the FXC packing flag (point 2) |
 | element access — translation x at `m[3][0]` | `m[3, 0]` — same position |
 | HLSL `M[i][j]` | `m[i, j]` — same position |
 

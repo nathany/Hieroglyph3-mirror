@@ -55,6 +55,10 @@ compile_defines :: proc(filename, entry, target: string, defines: []cstring) -> 
 // fullscreen blit standing in for the engine's SpriteRenderer). `name` is
 // only used in error messages.
 compile_source :: proc(source: string, name, entry, target: string, defines: []cstring) -> (code: ^d3dc.ID3DBlob, ok: bool) {
+	// Required, not cosmetic: this decides whether HLSL reads a cbuffer
+	// matrix's 16 floats as rows or columns. With it, `mul(v, M)` compiles to
+	// a mul/mad chain over rows; without it, to four dp4s against columns.
+	// Our fields are #row_major, so dropping this transposes every matrix.
 	flags := d3dc.D3DCOMPILE{.PACK_MATRIX_ROW_MAJOR}
 	when ODIN_DEBUG {
 		flags += {.DEBUG, .SKIP_OPTIMIZATION}
