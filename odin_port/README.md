@@ -49,23 +49,51 @@ odin test glyph\d3d_math -collection:glyph=glyph
 
 ## Applications
 
-| App | C++ original | Book chapter | Status |
-|---|---|---|---|
-| `basic_window` | Applications/BasicWindow | 1 | ✅ matches C++ behavior |
-| `basic_application` | Applications/BasicApplication | 1 | ✅ matches C++ behavior |
-| `rotating_cube` | Applications/RotatingCube | 3 | ✅ matches C++ behavior |
-| `basic_compute_shader` | Applications/BasicComputeShader | 5 | ✅ pixel-identical to C++ |
-| `basic_tessellation` | Applications/BasicTessellation | 4 | ✅ matches C++ behavior |
-| `immediate_renderer` | Applications/ImmediateRenderer | 3 | ✅ core visual scope (no text/console) |
-| `image_processor` | Applications/ImageProcessor | 10 | ✅ all 5 filters/images/samplers (no text) |
-| `tessellation_params` | Applications/TessellationParams | 4 | ✅ state in the title bar (no text) |
-| `skin_and_bones` | Applications/SkinAndBones | 8 | ✅ skinning + displacement + gizmos (no text) |
-| `curved_pn_triangles` | Applications/CurvedPointNormalTriangles | 9 | ✅ orbiting camera, W/A/± controls (no text) |
-| `interlocking_terrain_tiles` | Applications/InterlockingTerrainTiles | 9 | ✅ LOD terrain, W/L/D/A controls (no text) |
-| `light_prepass` | Applications/LightPrepass | 11 | ✅ MSAA deferred lighting, N cycles light count (no text) |
-| `deferred_rendering` | Applications/DeferredRendering | 11 | ✅ V/N/K/O/M toggles (no text) |
-| `water_simulation` | Applications/WaterSimulationI | 12 | ✅ CS water sim on wireframe heightmap (no text) |
-| `particle_storm` | Applications/ParticleStorm | 12 | ✅ append/consume GPU particles, indirect draw (no text) |
+### Controls
+
+The C++ samples draw their controls on screen; text rendering is out of scope here
+(see *Build & run* above), so they're documented instead. App-specific keys are in the
+table's **Controls** column; these are the ones shared across demos:
+
+| Key | Effect |
+|---|---|
+| `Escape` | Quit |
+| `Space` | Save a screenshot (PNG, next to the executable) — *except in `image_processor`, which rebinds it* |
+
+Five demos share a first-person camera (`fp_camera.odin`, an identical copy in each —
+`immediate_renderer`, `light_prepass`, `deferred_rendering`, `water_simulation`,
+`particle_storm`):
+
+| Input | Effect |
+|---|---|
+| `W` / `S` | Move forward / back |
+| `A` / `D` | Strafe left / right |
+| `Q` / `E` | Move up / down |
+| `Ctrl` (hold) | 3× move speed |
+| Right-drag | Look around (pitch clamped to ±90°) |
+
+Note `W`/`A` mean *movement* in those five, but *wireframe* and a shader toggle in
+`curved_pn_triangles` and `interlocking_terrain_tiles`, which have no free camera.
+Where a demo shows live state (tessellation factors, active modes), it goes in the
+**window title bar**.
+
+| App | C++ original | Book chapter | Controls | Status |
+|---|---|---|---|---|
+| `basic_window` | Applications/BasicWindow | 1 | — | ✅ matches C++ behavior |
+| `basic_application` | Applications/BasicApplication | 1 | — | ✅ matches C++ behavior |
+| `rotating_cube` | Applications/RotatingCube | 3 | — | ✅ matches C++ behavior |
+| `basic_compute_shader` | Applications/BasicComputeShader | 5 | — | ✅ pixel-identical to C++ |
+| `basic_tessellation` | Applications/BasicTessellation | 4 | — | ✅ matches C++ behavior |
+| `immediate_renderer` | Applications/ImmediateRenderer | 3 | camera; `1`/`2`/`3` off-center projection (symmetric / right / left) | ✅ core visual scope |
+| `image_processor` | Applications/ImageProcessor | 10 | `N` next filter · `I` next image · `Space` cycles sampler · left-drag pan · right-drag / wheel zoom | ✅ all 5 filters/images/samplers |
+| `tessellation_params` | Applications/TessellationParams | 4 | `G` tri/quad domain · `P` partitioning mode · `E`/`I` select edge / inside factor · numpad `+`/`-` adjust it | ✅ state in the title bar |
+| `skin_and_bones` | Applications/SkinAndBones | 8 | `A` replay animation | ✅ skinning + displacement + gizmos |
+| `curved_pn_triangles` | Applications/CurvedPointNormalTriangles | 9 | `W` wireframe · `A` adaptive silhouette · numpad `+`/`-` tessellation factor (1–10) | ✅ orbiting camera |
+| `interlocking_terrain_tiles` | Applications/InterlockingTerrainTiles | 9 | `W` wireframe · `L` hull-shader complexity · `D` shading mode (solid / shaded / LOD debug) · `A` automated camera | ✅ LOD terrain |
+| `light_prepass` | Applications/LightPrepass | 11 | camera; `N` cycles light mode | ✅ MSAA deferred lighting |
+| `deferred_rendering` | Applications/DeferredRendering | 11 | camera; `V` display · `N` light mode · `K` G-buffer opt · `O` light opt · `M` anti-aliasing | ✅ V/N/K/O/M toggles |
+| `water_simulation` | Applications/WaterSimulationI | 12 | camera | ✅ CS water sim on wireframe heightmap |
+| `particle_storm` | Applications/ParticleStorm | 12 | camera | ✅ append/consume GPU particles, indirect draw |
 
 ### basic_window
 
