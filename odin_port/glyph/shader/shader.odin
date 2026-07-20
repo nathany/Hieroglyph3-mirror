@@ -3,16 +3,16 @@
 //
 // The matrix story: like the engine, everything compiles with
 // D3DCOMPILE_PACK_MATRIX_ROW_MAJOR, so HLSL reads cbuffer matrix memory as
-// the matrix's ROWS. The demos use row-vector matrices from glyph:d3d_math
-// in `#row_major` fields (the guide's Setup A): storage matches packing, so
-// the shader sees each matrix exactly as built — compose `world * view *
-// proj` like the book and upload with no transposes.
+// the matrix's ROWS. Matrices come from glyph:d3d_math and live in
+// `#row_major` fields, so storage matches that packing and the shader sees
+// each matrix exactly as built — compose `world * view * proj` like the
+// book and upload with no transposes.
 //
 // The general rule (see the guide's Matrices section): the shader sees your
 // matrix transposed exactly when the field's storage layout differs from
-// this packing mode. A plain column-vector linalg matrix in a `#row_major`
-// field would ship un-transposed — wrong for `mul(v, M)` — but the distinct
-// #row_major type makes that a compile error at the field assignment.
+// this packing mode. Storage and packing agree here, so nothing is
+// transposed; the distinct #row_major type keeps a stray linalg matrix from
+// reaching a cbuffer field in the first place.
 //
 // Shaders are found on disk at runtime, straight from the repository's
 // Applications/Data/Shaders/ — the same files the C++ demos compile.

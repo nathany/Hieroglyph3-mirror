@@ -13,7 +13,8 @@ odin_port/
 ├── odrun.bat          # build + run one app: `.\odrun.bat basic_window`
 ├── glyph/             # support library, imported as the `glyph:` collection
 │   ├── window/        #   Win32 window wrappers (≈ Win32RenderWindow, Win32Window)
-│   └── renderer/      #   device/swap chain/depth/screenshot (≈ RendererDX11 subset)
+│   ├── renderer/      #   device/swap chain/depth/screenshot (≈ RendererDX11 subset)
+│   └── d3d_math/      #   row-vector matrix helpers (≈ Matrix4f / DirectXMath)
 └── apps/              # one package per sample application
 ```
 

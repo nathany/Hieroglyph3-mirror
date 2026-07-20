@@ -13,18 +13,23 @@
 // The builders wrap their core:math/linalg counterparts via transmute — a
 // column-vector matrix stored column-major and its row-vector transpose
 // stored row-major are the *same bytes*, so reinterpreting the type IS the
-// convention change. No arithmetic, nothing to get wrong. The camera
-// builders are written out instead: linalg has no LH 0..1-depth versions
-// (see the guide's camera-function trap), and the explicit literals match
-// the layouts DirectXMath documents (XMMatrixPerspectiveFovLH et al.).
+// convention change: a free transpose, no arithmetic, nothing to get wrong.
+// Note transmute is load-bearing here and not interchangeable with a cast:
+// `transmute` preserves BYTES (giving the logical transpose we want), while
+// `RM(m)` compiles too but preserves ELEMENTS, shuffling memory and leaving
+// a column-vector matrix in row-major clothing.
+//
+// The camera builders are written out instead: linalg has no LH 0..1-depth
+// versions (see the guide's camera-function trap), and the explicit
+// literals match the layouts DirectXMath documents
+// (XMMatrixPerspectiveFovLH et al.).
 //
 // Vector operations (normalize, cross, dot, lerp, length) have no
 // convention — keep using linalg's. `transpose(m)` is a builtin and accepts
-// #row_major matrices directly.
+// #row_major matrices directly, returning the same type.
 //
-// Naming follows core:math/linalg so call sites transition mechanically:
-// linalg.matrix4_rotate_f32 -> d3d_math.matrix4_rotate_f32 (+ reversed
-// composition order).
+// Naming follows core:math/linalg, so linalg's documentation and call-site
+// habits carry over: linalg.matrix4_rotate_f32 -> d3d_math.matrix4_rotate_f32.
 package d3d_math
 
 import "core:math"
