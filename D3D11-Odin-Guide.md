@@ -11,6 +11,12 @@ tessellation once, in Luna's DX12 book). Chapters 10–12 are optional continuat
 you decide to stay with DX11 for a while. Chapters 7–9 and 13 are skipped (rationale at
 the bottom).
 
+**Reference implementations:** `odin_port/` holds a finished Odin port of every sample
+below — including the optional and skipped chapters, MirrorMirror excepted — so there's
+always a working reference to compare against when your version misbehaves. Per-app
+notes, controls, and status live in [odin_port/README.md](odin_port/README.md). The
+plan above is about what's worth *writing yourself*; the references exist either way.
+
 ---
 
 ## Sample ↔ chapter map (this repo)
@@ -28,7 +34,7 @@ Which C++ sample belongs to which chapter — the thing you'll look up most ofte
 | 10 Image Processing | ImageProcessor |
 | 11 Deferred Rendering | DeferredRendering, LightPrepass |
 | 12 Simulations | WaterSimulationI, ParticleStorm |
-| 13 MT Paraboloid Rendering | MirrorMirror |
+| 13 MT Paraboloid Rendering | MirrorMirror *(no reference port — see Skipped chapters)* |
 
 Shaders for all samples: `Applications/Data/Shaders/` (plain HLSL, reusable
 byte-for-byte). Textures/models: `Applications/Data/`.
@@ -374,7 +380,9 @@ Bézier surface), so implementing in both books is pure duplication. Read Zink f
 
 **Instead of porting:** run the prebuilt **TessellationParams** demo from
 `Applications/Bin` while reading — it interactively visualizes every
-domain/partitioning/factor combination, which is worth more than a port.
+domain/partitioning/factor combination, which is worth more than a port. (The Odin
+reference port works just as well: `.\odrun.bat tessellation_params`, state in the
+title bar.)
 
 **If you can't resist:** `Applications/BasicTessellation/App.cpp` is only 295 lines +
 one shader (`Data/Shaders/BasicTessellation.hlsl`, tri domain). On top of your ch. 3
@@ -468,11 +476,13 @@ project. Reference: `Applications/DeferredRendering/`, `Data/Shaders/GBuffer*.hl
 
 - **Ch. 7, Multithreaded Rendering / Ch. 13, Multithreaded Paraboloid Rendering:**
   built on D3D11 deferred contexts, which the industry largely skipped; DX12's
-  command-list model is different and better, and Luna teaches it natively.
+  command-list model is different and better, and Luna teaches it natively. This is
+  the one gap in the reference ports: MirrorMirror (ch. 13) has none.
 - **Ch. 8, Mesh Rendering:** vertex skinning — Luna's DX12 book has a full skinned-mesh
-  chapter; doing it twice adds little.
+  chapter; doing it twice adds little. *(Reference port: `skin_and_bones`.)*
 - **Ch. 9, Dynamic Tessellation:** advanced applications of ch. 4; same "implement
-  tessellation once, in DX12" logic applies.
+  tessellation once, in DX12" logic applies. *(Reference ports: `curved_pn_triangles`,
+  `interlocking_terrain_tiles`.)*
 - **Not book content at all** (engine/blog demos — ignore): BasicScripting (Lua),
   BasicScenes, BasicRenderViews, KinectPlayground, Kinect2Playground,
   OculusRiftSample, MFCwithD3D11, GlyphletViewerWPF, Glyphlets, VolumeRendering,
