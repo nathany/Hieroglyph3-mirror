@@ -10,11 +10,13 @@ package d3d_math
 import "core:math/linalg"
 import "core:testing"
 
+@(private)
 approx :: proc(a, b: [4]f32, eps: f32 = 1e-4) -> bool {
 	for i in 0 ..< 4 {if abs(a[i] - b[i]) > eps {return false}}
 	return true
 }
 
+@(private)
 approx_m :: proc(a, b: Matrix4f32, eps: f32 = 1e-4) -> bool {
 	for i in 0 ..< 4 {
 		for j in 0 ..< 4 {if abs(a[i, j] - b[i, j]) > eps {return false}}
@@ -64,13 +66,14 @@ inverse_roundtrip :: proc(t: ^testing.T) {
 }
 
 // project returns NDC (after the w-divide) of a row-vector point transform.
+@(private)
 project :: proc(p: [3]f32, m: Matrix4f32) -> [3]f32 {
 	h := [4]f32{p.x, p.y, p.z, 1} * m
 	return h.xyz / h.w
 }
 
 @(test)
-perspective_fov :: proc(t: ^testing.T) {
+perspective_fov_lh_properties :: proc(t: ^testing.T) {
 	near, far := f32(0.1), f32(100)
 	p := perspective_fov_lh(1.0, 1.5, near, far)
 	testing.expect(t, p[2, 3] == 1 && p[3, 3] == 0, "w column wrong (row-vector layout)")
@@ -85,7 +88,7 @@ perspective_fov :: proc(t: ^testing.T) {
 }
 
 @(test)
-perspective_off_center :: proc(t: ^testing.T) {
+perspective_off_center_lh_properties :: proc(t: ^testing.T) {
 	l, r, b, tp, near := f32(-2), f32(3), f32(-1), f32(1.5), f32(0.1)
 	p := perspective_off_center_lh(l, r, b, tp, near, 100)
 	// The near-plane corners map to the NDC corners at depth 0.
@@ -94,7 +97,7 @@ perspective_off_center :: proc(t: ^testing.T) {
 }
 
 @(test)
-look_at :: proc(t: ^testing.T) {
+look_at_lh_properties :: proc(t: ^testing.T) {
 	eye, at := [3]f32{1, 2, 3}, [3]f32{4, 5, 6}
 	v := look_at_lh(eye, at, {0, 1, 0})
 	// The eye maps to the origin; the look-at point to +z at its distance.
