@@ -84,6 +84,18 @@ about the Win32/DXGI plumbing, and it's ~80 lines. SDL2/SDL3 remain an escape ha
 
 ## Matrices: the one section to internalize before writing code
 
+Quick reference — the two sides agree, which is why nothing ever gets transposed:
+
+|  | CPU (DirectXMath → your Odin) | GPU (HLSL in this book) |
+|---|---|---|
+| **Vector convention** | Row-vector: `v * M`, chains left-to-right (`World * View * Proj`), translation in the bottom row. `Matrix4f` is written this way; your Odin uses `glyph:d3d_math` builders to match. | Row-vector, written explicitly in the shader source as `mul(v, M)`. Not a compiler setting — it's just how the book's HLSL is authored. |
+| **Matrix storage** | Row-major. `Matrix4f` stores rows contiguously; Odin's `#row_major matrix[4,4]f32` does the same (plain `matrix[4,4]f32` would be column-major). | Row-major, but *not* declared in the HLSL — no shader in the book uses the `row_major` keyword. HLSL's default is column-major; the engine flips it globally with the FXC flag `D3DCOMPILE_PACK_MATRIX_ROW_MAJOR` (`ShaderFactoryDX11.cpp`, and `glyph:shader` here). |
+
+The two rows are independent knobs. **Vector convention** decides the math you write;
+**storage** decides how those 16 floats are read back out of the cbuffer. Storage
+only has to agree *across* the CPU/GPU boundary — mismatch it and every matrix
+arrives transposed, regardless of the math.
+
 The book's C++ (`Matrix4f`) and its HLSL are both **row-vector**: vertices transform
 as `v * M` / `mul(v, M)`, chains compose left-to-right (`World * View * Proj`), and
 translation sits in the bottom row of every matrix the book prints. Odin can match
