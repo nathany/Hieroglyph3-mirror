@@ -13,6 +13,28 @@ the bottom).
 
 ---
 
+## Sample ↔ chapter map (this repo)
+
+Which C++ sample belongs to which chapter — the thing you'll look up most often:
+
+| Chapter | Samples |
+|---|---|
+| 1 Overview | BasicWindow, BasicApplication |
+| 3 Rendering Pipeline | RotatingCube, ImmediateRenderer |
+| 4 Tessellation Pipeline | BasicTessellation, TessellationParams |
+| 5 Computation Pipeline | BasicComputeShader |
+| 8 Mesh Rendering | SkinAndBones |
+| 9 Dynamic Tessellation | CurvedPointNormalTriangles, InterlockingTerrainTiles |
+| 10 Image Processing | ImageProcessor |
+| 11 Deferred Rendering | DeferredRendering, LightPrepass |
+| 12 Simulations | WaterSimulationI, ParticleStorm |
+| 13 MT Paraboloid Rendering | MirrorMirror |
+
+Shaders for all samples: `Applications/Data/Shaders/` (plain HLSL, reusable
+byte-for-byte). Textures/models: `Applications/Data/`.
+
+---
+
 ## Toolchain
 
 Everything you need ships with the Odin compiler — no package manager, no version
@@ -24,9 +46,19 @@ matrix to manage:
 | DXGI (factory, swap chain) | `vendor:directx/dxgi` | |
 | Shader compilation | `vendor:directx/d3d_compiler` | FXC, Shader Model 5.0 — same as the book. `vendor:directx/dxc` exists but isn't needed until DX12/SM6. |
 | Win32 API | `core:sys/windows` | Window creation, message pump, `L("...")` UTF-16 literals |
-| Math | built-in `matrix[4,4]f32` + `core:math/linalg` | See the matrix section below — this is the one area needing real care |
-| Image loading (ch. 5+) | `core:image/png` | Pure-Odin PNG loader, zero C deps — enough for the book's textures. It is **decode-only** (verified on `dev-2026-07`), so screenshots go through `vendor:stb/image`'s `write_png` — its prebuilt `stb_image_write.lib` ships with the toolchain in `vendor/stb/lib`, so this costs no external dependency. |
+| Math | built-in `matrix[4,4]f32` + `core:math/linalg` | See the matrix section below — this is the one area needing real care. The book's row-vector builders it doesn't cover live in `glyph:d3d_math`. |
+| Image loading (ch. 5+) | `core:image/png` | Pure-Odin PNG decoder, zero C deps — enough for every texture the book ships. Parse metadata too: sRGB lives in the file's chunks, not the format you pick (gotcha #13). **No DDS support** — the one cube map in the samples (`TropicalSunnyDay.dds`, legacy uncompressed BGRA) needs ~85 lines of hand-parsing. |
+| Image saving (screenshots) | `vendor:stb/image` | `core:image/png` is **decode-only** (verified on `dev-2026-07`), so `write_png` handles the `Space`-key screenshots. The prebuilt `stb_image_write.lib` ships in the toolchain's `vendor/stb/lib`, so this C dependency costs no build step. |
 | Timing | `core:time` | `tick_now()`/`tick_diff()` replace the engine's QPC `Timer` class |
+| File I/O | `core:os` | `read_entire_file` for shader source and model files — it takes an allocator (required, not defaulted) and returns `([]byte, Error)` |
+| Callback context | `base:runtime` | `proc "system"` callbacks (the wndproc) start with no Odin context; set `context = runtime.default_context()` before calling anything that allocates. Note `base:`, not `core:`. |
+| Tests | `core:testing` | `odin test <pkg>` with `@(test)` procs — worth wiring up for anything numeric, e.g. the matrix helpers |
+
+**One gap worth knowing up front:** there is no text rendering here. Several samples
+show state as an on-screen overlay (the engine has a sprite-font renderer); nothing in
+`core`/`vendor` replaces it, and building one is a project of its own. Put that state
+in the window title bar instead — it costs one `SetWindowTextW` call and keeps the
+focus on D3D.
 
 **Rosetta stone:** the official Odin examples repo contains
 [`directx/d3d11_minimal_sdl2/d3d11_in_odin.odin`](https://github.com/odin-lang/examples/blob/master/directx/d3d11_minimal_sdl2/d3d11_in_odin.odin)
@@ -436,25 +468,7 @@ project. Reference: `Applications/DeferredRendering/`, `Data/Shaders/GBuffer*.hl
 
 ---
 
-## Appendix A — Sample ↔ chapter map (this repo)
-
-| Chapter | Samples |
-|---|---|
-| 1 Overview | BasicWindow, BasicApplication |
-| 3 Rendering Pipeline | RotatingCube, ImmediateRenderer |
-| 4 Tessellation Pipeline | BasicTessellation, TessellationParams |
-| 5 Computation Pipeline | BasicComputeShader |
-| 8 Mesh Rendering | SkinAndBones |
-| 9 Dynamic Tessellation | CurvedPointNormalTriangles, InterlockingTerrainTiles |
-| 10 Image Processing | ImageProcessor |
-| 11 Deferred Rendering | DeferredRendering, LightPrepass |
-| 12 Simulations | WaterSimulationI, ParticleStorm |
-| 13 MT Paraboloid Rendering | MirrorMirror |
-
-Shaders for all samples: `Applications/Data/Shaders/` (plain HLSL, reusable
-byte-for-byte). Textures/models: `Applications/Data/`.
-
-## Appendix B — Using the C++ demos alongside
+## Appendix — Using the C++ demos alongside
 
 The solution builds with VS2022 (projects retargeted to v143, DirectXTK 2019 via
 NuGet); built demos land in `Applications/Bin`. Running the original next to your Odin
