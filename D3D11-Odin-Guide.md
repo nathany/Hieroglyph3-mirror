@@ -55,11 +55,13 @@ matrix to manage:
 | Callback context | `base:runtime` | `proc "system"` callbacks (the wndproc) start with no Odin context; set `context = runtime.default_context()` before calling anything that allocates. Note `base:`, not `core:`. |
 | Tests | `core:testing` | `odin test <pkg>` with `@(test)` procs — worth wiring up for anything numeric, e.g. the matrix helpers |
 
-**One gap worth knowing up front:** there is no text rendering here. Several samples
-show state as an on-screen overlay (the engine has a sprite-font renderer); nothing in
-`core`/`vendor` replaces it, and building one is a project of its own. Put that state
-in the window title bar instead — it costs one `SetWindowTextW` call and keeps the
-focus on D3D.
+**One gap worth knowing up front:** there is no drop-in replacement for the engine's
+sprite-font renderer. Ten of the samples draw state as an on-screen overlay — mostly
+just name and FPS, but three of them show keybind legends and live tessellation
+values. The cheap answer is the window title bar: one `SetWindowTextW` call, no
+pipeline, and it comfortably holds even TessellationParams' full state. Document
+keybinds in a README rather than drawing them. If you do want real text later,
+`vendor:stb` has two good options — see Appendix B.
 
 **Rosetta stone:** the official Odin examples repo contains
 [`directx/d3d11_minimal_sdl2/d3d11_in_odin.odin`](https://github.com/odin-lang/examples/blob/master/directx/d3d11_minimal_sdl2/d3d11_in_odin.odin)
@@ -478,9 +480,60 @@ project. Reference: `Applications/DeferredRendering/`, `Data/Shaders/GBuffer*.hl
 
 ---
 
-## Appendix — Using the C++ demos alongside
+## Appendix A — Using the C++ demos alongside
 
 The solution builds with VS2022 (projects retargeted to v143, DirectXTK 2019 via
 NuGet); built demos land in `Applications/Bin`. Running the original next to your Odin
 port is the fastest way to answer "is my output actually right?" — especially for
 TessellationParams (ch. 4 intuition) and the image-processing filters (ch. 10).
+
+---
+
+## Appendix B — Text rendering, if you want it
+
+The title bar covers this port's needs, so nothing here is implemented. But the
+options are better than they first appear, and the C++ is a worse guide than you'd
+expect.
+
+**What the engine actually does.** `SpriteFontDX11::Initialize` uses **GDI+** (not
+GDI) — `Gdiplus::Font`, `MeasureString`, `DrawString` — to rasterize `'!'`..`'~'`
+once into a 1024-wide atlas, measuring each glyph's blank space to derive tight
+character rects. After startup GDI+ is gone; the per-frame path is plain D3D11
+instanced quads through `Sprite.hlsl`. So the dated part is the *atlas baker*, not
+the renderer. Porting it as-is means ~1,020 lines (`SpriteFontDX11`,
+`SpriteRendererDX11`, `SpriteVertexDX11`, `SpriteFontLoaderDX11`) — and Odin has no
+GDI+ bindings, so ~290 of those lines would mean hand-writing COM bindings for a
+2001-era API. Don't. Replace the baker instead.
+
+**`vendor:stb/easy_font`** is the small option. It's a pure-Odin source port, no
+`foreign import` and no `.lib` — it pulls in only `core:math` and `core:mem`.
+`print(x, y, text, color, quads[:])` fills a buffer of 64-byte `Quad`s (four
+`Vertex{v: [3]f32, c: [4]u8}` corners) in screen-space pixels. There are **no
+texture coordinates**, because there's no atlas and no texture: you're drawing
+colored quads. That erases the whole font-asset problem — nothing to ship, nothing
+to bake. A `glyph:text` package around it is roughly 180 lines (inline HLSL mapping
+pixels to NDC, dynamic vertex buffer, static index buffer, alpha blend, depth off),
+following the same inline-shader pattern `BLIT_HLSL` already uses in
+`deferred_rendering` and `light_prepass`. The font is chunky and wireframe-ish —
+fine for a keybind legend, not for anything you want to look designed.
+
+**`vendor:stb/truetype`** is the real option, ~300 lines. `PackBegin` /
+`PackFontRange` / `PackEnd` bake a proper atlas from a `.ttf` and
+`GetPackedQuad` hands back positioned, textured quads. Note it calls stb_rect_pack
+*internally* — you don't drive `vendor:stb/rect_pack` yourself. Costs a link
+dependency (`stb_truetype.lib`, prebuilt in the toolchain's `vendor/stb/lib`) and a
+decision about where the font file comes from; the C++ asks for `Consolas` by name,
+so the equivalent is loading `C:\Windows\Fonts\consola.ttf`.
+
+**DirectWrite** is the modern answer to "what replaced GDI+", and the wrong tool
+here: there are no DirectWrite or Direct2D bindings in Odin, and drawing DWrite text
+onto a D3D11 target normally goes through Direct2D interop — a D2D device, a
+DXGI-shared surface, `BeginDraw`/`EndDraw` around your own rendering. That's more
+novel COM plumbing than the GDI+ path you were trying to escape.
+
+**[Slug](https://terathon.com/blog/decade-slug.html)** renders glyph outlines
+directly from Bézier data in the pixel shader — sharp at any magnification, no atlas,
+no baked resolution. Lengyel has dedicated the patent to the public domain and the
+HLSL is available, which makes it genuinely viable now. But outline extraction, curve
+preprocessing, and band construction are still on you, and that's the bulk of the
+work. A project in its own right, not a step in porting this book.
