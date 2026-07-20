@@ -3,20 +3,16 @@
 //
 // The matrix story: like the engine, everything compiles with
 // D3DCOMPILE_PACK_MATRIX_ROW_MAJOR, so HLSL reads cbuffer matrix memory as
-// the matrix's ROWS. The packing rule (see the guide's Matrices section):
-// the shader sees your matrix transposed exactly when the Odin field's
-// storage layout differs from this packing mode. Both conventions work with
-// the flag — they just need matching field layouts:
+// the matrix's ROWS. The demos use row-vector matrices from glyph:d3d_math
+// in `#row_major` fields (the guide's Setup A): storage matches packing, so
+// the shader sees each matrix exactly as built — compose `world * view *
+// proj` like the book and upload with no transposes.
 //
-//   - column-vector matrices (core:math/linalg — what these demos use) go
-//     in PLAIN `matrix[4,4]f32` fields: column storage read as rows hands
-//     the shader Mᵀ, which is what row-vector `mul(v, M)` needs. See the
-//     guide's addendum.
-//   - row-vector matrices (glyph:d3d_math — the guide's Setup A) go in
-//     `#row_major` fields: matching layouts hand the shader M as built.
-//
-// Mixing the pairings ships a wrongly-transposed matrix and shears
-// silently; the distinct #row_major type keeps the builders apart.
+// The general rule (see the guide's Matrices section): the shader sees your
+// matrix transposed exactly when the field's storage layout differs from
+// this packing mode. A plain column-vector linalg matrix in a `#row_major`
+// field would ship un-transposed — wrong for `mul(v, M)` — but the distinct
+// #row_major type makes that a compile error at the field assignment.
 //
 // Shaders are found on disk at runtime, straight from the repository's
 // Applications/Data/Shaders/ — the same files the C++ demos compile.

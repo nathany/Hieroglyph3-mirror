@@ -60,7 +60,7 @@ inverse :: proc(m: Matrix4f32) -> Matrix4f32 {
 	return transmute(Matrix4f32)linalg.inverse(transmute(linalg.Matrix4f32)m)
 }
 
-// --- camera (row-vector forms of glyph:camera; Matrix4f / D3DX layouts) ----
+// --- camera (LH 0..1-depth; Matrix4f / D3DX layouts, row-vector) -----------
 
 perspective_fov_lh :: proc(fov_y, aspect, near, far: f32) -> Matrix4f32 {
 	y_scale := 1.0 / math.tan(fov_y * 0.5)

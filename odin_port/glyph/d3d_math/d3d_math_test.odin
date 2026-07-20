@@ -2,10 +2,9 @@
 //
 //   odin test glyph\d3d_math -collection:glyph=glyph
 //
-// Deliberately self-contained (no glyph:camera dependency): the camera
-// builders are checked against their defining properties — frustum corners
-// land on NDC ±1, near/far map to depth 0/1 — rather than against another
-// implementation.
+// Deliberately self-contained: the camera builders are checked against
+// their defining properties — frustum corners land on NDC ±1, near/far map
+// to depth 0/1 — rather than against another implementation.
 package d3d_math
 
 import "core:math/linalg"

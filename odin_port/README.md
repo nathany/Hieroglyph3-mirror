@@ -287,7 +287,7 @@ collection, `MeshedReconstruction.stl` (binary STL loader), skybox from a
 hand-parsed uncompressed DDS cube map (`core:image` has no DDS support), and
 a circling point light driving the engine's UE4-style PBR shaders, used
 unchanged. First-person camera (right-drag look, W/A/S/D/Q/E, Ctrl sprint),
-keys 1/2/3 off-center projections (`glyph:camera`'s
+keys 1/2/3 off-center projections (`glyph:d3d_math`'s
 `perspective_off_center_lh`), live swap-chain resize (`glyph:renderer`'s
 `resize`), Esc/Space as usual.
 

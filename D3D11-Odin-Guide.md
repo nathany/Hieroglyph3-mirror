@@ -107,24 +107,25 @@ compile error rather than a silent shear; and there is no SIMD penalty (measured
 **The camera-function trap.** Don't reach for `linalg.matrix4_perspective` /
 `matrix4_look_at`: they are **OpenGL-convention** — perspective maps depth to −1..1
 (D3D needs 0..1) and look_at is −Z-forward. Your cube will be depth-clipped into
-oblivion. The LH 0..1-depth versions live in the repo already: row-vector in
-`glyph:d3d_math` (ports of `Matrix4f::PerspectiveFovLHMatrix` / `LookAtLHMatrix`),
-column-vector twins in `glyph:camera`.
+oblivion. The LH 0..1-depth versions live in the repo already: `glyph:d3d_math`
+ports `Matrix4f::PerspectiveFovLHMatrix` / `PerspectiveOffCenterLH` /
+`LookAtLHMatrix` in row-vector form.
 
 Vector operations (`normalize`, `cross`, `dot`, `lerp`, `length`) and `transpose`
 are convention-agnostic — use linalg's freely in either setup. Matrix *builders*
 always carry a convention: take them from `d3d_math` (row-vector) or linalg
 (column-vector), never both in one program — the distinct types enforce this.
 
-### Addendum — the column-vector alternative (what `odin_port`'s demos use)
+### Addendum — the column-vector alternative
 
-The 15 ported demos predate Setup A: they use plain `matrix[4,4]f32` fields and
-linalg's column-vector builders, with the same compile flag. Storage (column-major)
-then *differs* from packing (row-major), so by the packing rule the shader sees the
-transpose — which is exactly what `mul(v, M)` needs, because the column-vector
-matrix for a transform *is* the book's matrix transposed. Equally coherent, zero
-transposes, full use of linalg; the cost is that every line of matrix math reads
-mirrored against the book:
+Setup A is not the only coherent configuration. Plain `matrix[4,4]f32` fields with
+linalg's column-vector builders work with the same compile flag (the `odin_port`
+demos were originally written this way, before being migrated to Setup A — provably
+byte-identical uploads either way). Storage (column-major) then *differs* from
+packing (row-major), so by the packing rule the shader sees the transpose — which
+is exactly what `mul(v, M)` needs, because the column-vector matrix for a transform
+*is* the book's matrix transposed. Equally coherent, zero transposes, full use of
+linalg; the cost is that every line of matrix math reads mirrored against the book:
 
 | | Book / Hieroglyph3 (`Matrix4f`) | Column-vector Odin (`core:math/linalg`) |
 |---|---|---|
