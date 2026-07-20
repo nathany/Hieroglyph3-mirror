@@ -47,7 +47,8 @@ matrix to manage:
 | Shader compilation | `vendor:directx/d3d_compiler` | FXC, Shader Model 5.0 — same as the book. `vendor:directx/dxc` exists but isn't needed until DX12/SM6. |
 | Win32 API | `core:sys/windows` | Window creation, message pump, `L("...")` UTF-16 literals |
 | Math | built-in `matrix[4,4]f32` + `core:math/linalg` | See the matrix section below — this is the one area needing real care. The book's row-vector builders it doesn't cover live in `glyph:d3d_math`. |
-| Image loading (ch. 5+) | `core:image/png` | Pure-Odin PNG decoder, zero C deps — enough for every texture the book ships. Parse metadata too: sRGB lives in the file's chunks, not the format you pick (gotcha #13). **No DDS support** — the one cube map in the samples (`TropicalSunnyDay.dds`, legacy uncompressed BGRA) needs ~85 lines of hand-parsing. |
+| Image loading (ch. 5+) | `core:image/png` | Pure-Odin PNG decoder, zero C deps — enough for every texture the book ships. Parse metadata too: sRGB lives in the file's chunks, not the format you pick (gotcha #13). **No DDS support** — see the next row for the one file that needs it. |
+| Cube map loading (ch. 3) | *(none — hand-rolled)* | `TropicalSunnyDay.dds` is the only DDS in the samples, and nothing in `core`/`vendor` reads DDS (stb doesn't either). It's the easy case though — legacy uncompressed 32-bit BGRA, 512×512, no mip chain — so it's a 128-byte header plus six flat face blobs, ~28 lines of parsing in `apps/immediate_renderer/skybox.odin`. Converting to six PNGs with `texconv` is possible but not worth it: the cube-texture + SRV creation is the same either way, and you'd trade those 28 lines for six asset files that diverge from the C++ demo. |
 | Image saving (screenshots) | `vendor:stb/image` | `core:image/png` is **decode-only** (verified on `dev-2026-07`), so `write_png` handles the `Space`-key screenshots. The prebuilt `stb_image_write.lib` ships in the toolchain's `vendor/stb/lib`, so this C dependency costs no build step. |
 | Timing | `core:time` | `tick_now()`/`tick_diff()` replace the engine's QPC `Timer` class |
 | File I/O | `core:os` | `read_entire_file` for shader source and model files — it takes an allocator (required, not defaulted) and returns `([]byte, Error)` |
@@ -335,6 +336,15 @@ cube doesn't need it).
   rather generate than hand-write.
 - The official Odin example — the same program modulo shader conventions; diff against
   it when stuck.
+
+**The chapter's second sample, ImmediateRenderer**, is worth doing after the cube: it
+adds a skybox, which is where cube maps and `TEXTURECUBE` SRVs enter. `App.cpp:222`
+loads `TropicalSunnyDay.dds` through DirectXTK's `DDSTextureLoader`; the Odin side
+hand-parses it in `apps/immediate_renderer/skybox.odin` (see the toolchain table's
+cube-map row for why). The shader trick is worth the port on its own —
+`Skybox.hlsl` pushes positions to the far plane via `.xyww` and samples the cube by
+direction, with depth compare `LESS_EQUAL` so it fills exactly the pixels depth never
+touched.
 
 **Gotchas:** the whole matrix section, #6, #9, #11.
 
