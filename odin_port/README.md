@@ -10,7 +10,7 @@ of its C++ original (in `../Applications/`).
 
 ```
 odin_port/
-├── odrun.bat          # build + run one app: `.\odrun.bat basic_window`
+├── Justfile           # local build, run, check, test, and ASan recipes
 ├── glyph/             # support library, imported as the `glyph:` collection
 │   ├── window/        #   Win32 window wrappers (≈ Win32RenderWindow, Win32Window)
 │   ├── renderer/      #   device/swap chain/depth/screenshot (≈ RendererDX11 subset)
@@ -26,16 +26,20 @@ repository's `../Applications/Data/` tree, unchanged and uncopied.
 
 ## Build & run
 
+From Git Bash:
+
 ```
-.\odrun.bat basic_window
+cd odin_port
+just run basic_window
 ```
 
-In PowerShell the leading `.\` is required — PowerShell doesn't search the
-current directory, so a bare `odrun` (or `run`) can find a same-named script
-elsewhere on PATH. In cmd, `odrun basic_window` works. `odrun.bat` wraps
-`odin run apps\<name> -collection:glyph=glyph -subsystem:windows -debug`; drop
-`-subsystem:windows` to get a console for debug prints. Text rendering is
-permanently out of scope for these ports.
+Run `just list` to list the sample names and `just --list` to see all recipes.
+Useful local validation commands include `just check basic_window`,
+`just verify`, and `just asan basic_window`. The run recipe
+wraps `odin run apps/<name> -collection:glyph=glyph -subsystem:windows -debug`;
+drop `-subsystem:windows` from the recipe to get a console for debug prints. ASan
+builds keep the console subsystem so sanitizer diagnostics remain visible. Text
+rendering is permanently out of scope for these ports.
 
 Data files (shaders, textures, models) load from the repo's
 `../Applications/Data` tree — the path is baked in at compile time from the
@@ -44,7 +48,7 @@ source location, so lookup doesn't depend on the working directory.
 The math helpers in `glyph:d3d_math` have a test suite:
 
 ```
-odin test glyph\d3d_math -collection:glyph=glyph
+just test
 ```
 
 ## Applications

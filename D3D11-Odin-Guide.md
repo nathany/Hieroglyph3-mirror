@@ -393,7 +393,7 @@ Bézier surface), so implementing in both books is pure duplication. Read Zink f
 **Instead of porting:** run the prebuilt **TessellationParams** demo from
 `Applications/Bin` while reading — it interactively visualizes every
 domain/partitioning/factor combination, which is worth more than a port. (The Odin
-reference port works just as well: `.\odrun.bat tessellation_params`, state in the
+reference port works just as well: `cd odin_port && just run tessellation_params`, state in the
 title bar.)
 
 **If you can't resist:** `Applications/BasicTessellation/App.cpp` is only 295 lines +

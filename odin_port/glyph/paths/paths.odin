@@ -6,8 +6,8 @@
 // The data directory is baked in at COMPILE TIME from this file's own path
 // (`#file`), so lookup never depends on the working directory. This file
 // lives at <repo>/odin_port/glyph/paths/paths.odin, so four parent hops
-// reach the repo root, where Applications/Data lives. run.bat is the only
-// supported launcher, and the repo doesn't move between build and run.
+// reach the repo root, where Applications/Data lives. The repo does not move
+// between build and run.
 package paths
 
 import "core:fmt"

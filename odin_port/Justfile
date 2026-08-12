@@ -1,0 +1,44 @@
+set shell := ["bash", "-uc"]
+set windows-shell := ["C:/Program Files/Git/bin/bash.exe", "-uc"]
+
+apps_dir := "apps"
+glyph_dir := "glyph"
+
+default:
+    @just --list
+
+# List the available sample applications.
+list:
+    @for app in "{{apps_dir}}"/*/; do basename "$app"; done | sort
+
+# Build and run one sample with debug information.
+run app:
+    @test -d "{{apps_dir}}/{{app}}" || { echo "unknown app: {{app}}" >&2; exit 2; }
+    @mkdir -p bin
+    odin run "{{apps_dir}}/{{app}}" -collection:glyph={{glyph_dir}} -out:"bin/{{app}}.exe" -subsystem:windows -debug
+
+# Type-check one sample and promote warnings to errors.
+check app:
+    @test -d "{{apps_dir}}/{{app}}" || { echo "unknown app: {{app}}" >&2; exit 2; }
+    odin check "{{apps_dir}}/{{app}}" -collection:glyph={{glyph_dir}} -warnings-as-errors -strict-style -error-pos-style:unix
+
+# Type-check every sample. Use this after changing shared glyph code.
+check-all:
+    @for app in "{{apps_dir}}"/*/; do \
+        name="$(basename "$app")"; \
+        echo "checking $name"; \
+        odin check "$app" -collection:glyph={{glyph_dir}} -warnings-as-errors -strict-style -error-pos-style:unix || exit; \
+    done
+
+# Run the currently available shared-library tests.
+test:
+    odin test glyph/d3d_math -collection:glyph={{glyph_dir}} -warnings-as-errors -strict-style -error-pos-style:unix
+
+# Run the routine pre-review validation suite.
+verify: check-all test
+
+# Produce a console-subsystem AddressSanitizer build without launching it.
+asan app:
+    @test -d "{{apps_dir}}/{{app}}" || { echo "unknown app: {{app}}" >&2; exit 2; }
+    @mkdir -p bin
+    odin build "{{apps_dir}}/{{app}}" -collection:glyph={{glyph_dir}} -out:"bin/{{app}}-asan.exe" -debug -sanitize:address
