@@ -66,6 +66,23 @@ in [`Source/RenderApplication.cpp`](Source/RenderApplication.cpp#L183). Reuse
 the first-person-camera and pending-resize approach already present in the Odin
 particle and water samples, while preserving the sample's `A` replay behavior.
 
+## P2 — SkinAndBones generates NaN normals at the cone apex
+
+- [ ] Preserve the C++ zero-vector normalization behavior when generating cone normals.
+
+Location: [`odin_port/apps/skin_and_bones/cone.odin`](odin_port/apps/skin_and_bones/cone.odin#L291)
+
+The `v == 0` ring collapses to the cone apex, so `x`, `z`, and the computed
+`y` component of its normal are all zero. Odin's `linalg.normalize` divides by
+the vector length and produces NaNs for this deterministic zero input. Those
+values are uploaded as vertex normals and can contaminate lighting and
+tessellation calculations.
+
+The corresponding C++ code also calls `Normalize`, but
+[`Vector3f::Normalize`](Source/Vector3f.cpp#L42) explicitly substitutes a
+nonzero divisor for zero magnitude and leaves the vector at zero. Use
+`linalg.normalize0` or an explicit zero-length guard to preserve that behavior.
+
 ## P2 — WaterSimulation unnecessarily requires feature level 11
 
 - [ ] Restore the original feature-level 10 and shader-model 4 path.
@@ -191,6 +208,77 @@ which removes the intended quality improvement at oblique viewing angles. The
 C++ cone material sets it to 16 in
 [`Source/GeometryGeneratorDX11.cpp`](Source/GeometryGeneratorDX11.cpp#L932).
 
+## P3 — Failed initialization leaks partially created resources
+
+- [ ] Make renderer and scene constructors clean up partial results before returning failure.
+
+Representative locations:
+
+- [`odin_port/glyph/renderer/renderer.odin`](odin_port/glyph/renderer/renderer.odin#L85)
+- [`odin_port/apps/skin_and_bones/main.odin`](odin_port/apps/skin_and_bones/main.odin#L227)
+
+Construction procedures populate their result structs incrementally and may
+return after any later shader, buffer, texture, view, or state creation fails.
+Callers register their destruction `defer` only after receiving `ok == true`,
+so an `ok == false` result containing earlier COM objects is discarded without
+releasing them. `renderer.create` can similarly leak its device, context,
+swap chain, or views after a later initialization failure.
+
+Add failure cleanup inside each constructor, or arrange for the caller to
+destroy partial results regardless of the success flag. Apply the solution as
+a repeated pattern across the other scene and pipeline setup procedures rather
+than fixing only the representative SkinAndBones path.
+
+## P3 — InterlockingTerrainTiles starts at the wrong resolution
+
+- [ ] Restore the reference application's 1024x768 initial client size.
+
+Location: [`odin_port/apps/interlocking_terrain_tiles/main.odin`](odin_port/apps/interlocking_terrain_tiles/main.odin#L33)
+
+The Odin sample requests 640x480, while the C++ application configures
+1024x768 in
+[`Applications/InterlockingTerrainTiles/App.cpp`](Applications/InterlockingTerrainTiles/App.cpp#L52).
+Both are 4:3, so the projection shape is unchanged, but the lower resolution
+changes the reference presentation and reduces the detail visible in a sample
+specifically demonstrating tessellation and terrain LOD.
+
+## P3 — DDS cube-map size arithmetic can wrap
+
+- [ ] Validate DDS dimensions using checked wide arithmetic before indexing or narrowing.
+
+Location: [`odin_port/apps/immediate_renderer/skybox.odin`](odin_port/apps/immediate_renderer/skybox.odin#L94)
+
+The hand-written loader computes `width * height * 4` while both dimensions
+are `u32`. A malformed DDS header can wrap this multiplication before it is
+converted to `int`, allowing the truncation check to accept an undersized file.
+Later face offsets can then index outside `data`; `width * 4` used for
+`SysMemPitch` can wrap independently.
+
+Compute sizes in a checked `u64` or `int`, reject dimensions outside the D3D11
+limits, verify the complete six-face payload, and only then narrow values for
+the D3D descriptors. The bundled texture is trusted, so this is input-hardening
+rather than an ordinary sample-path failure.
+
+## P3 — Screenshot formatting accumulates temporary allocations
+
+- [ ] Bound the temporary allocator lifetime in samples that support repeated screenshots.
+
+Representative locations:
+
+- [`odin_port/apps/immediate_renderer/main.odin`](odin_port/apps/immediate_renderer/main.odin#L751)
+- [`odin_port/glyph/renderer/renderer.odin`](odin_port/glyph/renderer/renderer.odin#L369)
+
+Screenshot paths are built with `fmt.tprintf`, and `save_backbuffer_png` uses
+`fmt.ctprintf`; both allocate from `context.temp_allocator`. Several sample
+loops, including ImmediateRenderer, never reset that allocator. Memory usage
+therefore grows with every screenshot until process exit. This is not a
+per-frame leak when no screenshot is requested, but repeated captures make it
+observable in a long-running session.
+
+Reset the temporary allocator at a safe frame boundary, as the larger particle,
+water, deferred, and light-prepass samples already do, or use an explicitly
+scoped allocator for screenshot formatting.
+
 ## P3 — MS3D loader reads section counts past truncated input
 
 - [ ] Bounds-check the vertex and triangle counts before reading them.
@@ -206,6 +294,32 @@ exactly after its vertex records.
 Before each `read_u16`, require `len(data) >= pos + 2` and return a descriptive
 truncation error otherwise. Size calculations based on the counts should also
 remain checked before multiplication and narrowing.
+
+## Reviewed reports not classified as port regressions
+
+The following review comments were investigated but are not included above as
+Odin port regressions:
+
+- Screenshot capture currently occurs after `Present`. With the discard swap
+  effect, the saved backbuffer contents are not guaranteed. However, the C++
+  [`Application::MessageLoop`](Source/Application.cpp#L125) also calls
+  `Update`—which presents—before `TakeScreenShot`. This is a real inherited
+  behavior issue. Fixing it would be a reasonable documented departure if
+  reliable screenshots are preferred over exact call-order fidelity.
+- DeferredRendering tests far-plane intersection using `light.Range` while
+  drawing a volume scaled to `1.1 * light.Range`. The C++ implementation uses
+  the same calculation in
+  [`Applications/DeferredRendering/ViewLights.cpp`](Applications/DeferredRendering/ViewLights.cpp#L354).
+- TessellationParams can retain a quad-only edge or inside selection after
+  switching to the triangle domain. The C++ event handler preserves the same
+  selection and rejects edits through its range checks.
+- The reported STL face-count multiplication overflow was disproved: on the
+  supported 64-bit target, the calculation and subsequent length comparison
+  reject the malformed count.
+- Converting `COLOR_WRITE_ENABLE_ALL` to the descriptor's `u8` field is valid;
+  replacing the conversion with `transmute` is unnecessary.
+- The old `run.bat` documentation typo is obsolete after replacing the batch
+  launcher with the `Justfile` workflow.
 
 ## Review validation record
 
