@@ -3,6 +3,7 @@
 ## Project intent
 
 - Treat the Odin port as a learning-oriented reference implementation of the book's C++ code.
+- Treat `D3D11-Odin-Guide.md` as a human-facing companion for readers implementing the book's examples by hand. Keep agent-specific workflow, review, and automation instructions in `AGENTS.md`, not in the guide.
 - Preserve the observable behavior and structure of the corresponding book sample unless Odin semantics, undefined behavior, or a clearly broken advertised path requires a documented deviation.
 - Keep the legacy C++ sources available as the behavioral reference. Do not modernize or otherwise change them unless the task explicitly includes that work.
 - This repository is a playground: prefer small, reviewable changes and explain intentional departures from the reference implementation.
