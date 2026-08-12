@@ -1,4 +1,4 @@
 interface:
   display_name: "Review Changes"
-  short_description: "Review diffs with project-specific checks"
+  short_description: "Review diffs for defects and C++ reference parity"
   default_prompt: "Use $review-changes to review this branch against its base."
