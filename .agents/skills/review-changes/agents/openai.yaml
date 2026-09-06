@@ -1,4 +1,4 @@
 interface:
   display_name: "Review Changes"
-  short_description: "Review diffs for defects and C++ reference parity"
-  default_prompt: "Use $review-changes to review this branch against its base."
+  short_description: "Review diffs and audit Odin/C++ reference fidelity"
+  default_prompt: "Use $review-changes to review the requested diff or audit the current Odin port against its C++ reference."

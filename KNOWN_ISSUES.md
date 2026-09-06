@@ -1,335 +1,400 @@
 # Known Issues
 
-These issues were identified while reviewing the Odin port against `master` on
-2026-08-11. The executable C++ applications and the engine helpers they call are
-the behavioral reference. The items are ordered by priority; checkboxes are
-intended to make later follow-up easy to track.
+This record revalidates the reports collected on 2026-08-11 against the current
+Odin and C++ source at `f92da47` on 2026-09-06. It is a current-tree audit, not a
+new diff review against `master`. The demos have been tested and work; the
+remaining issues concern reference fidelity, particular controls, failure paths,
+or unusual inputs. No implementation fixes were made during this audit.
+
+The executable C++ applications, their helpers, and the dependency versions used
+here are the behavioral reference. An inherited problem is still real, but fixing
+it is an intentional improvement rather than a port correction. IDs remain stable
+when reclassified. Checkboxes describe proposed work; optional improvements are
+not commitments to expand sample scope.
+
+## Triage and proposed order
+
+P1 denotes a shared critical-path concern, P2 a correctness or advertised-behavior
+defect worth addressing, and P3 lower urgency fidelity or robustness work. Priority,
+origin, and effort are separate: tiny P3 fixes can be worth batching early. Source
+and API evidence do not imply a failure was reproduced on the local GPU.
+
+| ID | Report | Classification | Priority | Minimum change / divergence |
+|---|---|---|---|---|
+| KI-001 | DXGI factory relationship | Confirmed port defect | P1 | Small ownership correction; restores reference |
+| KI-002 | Terrain complex LOD | Confirmed port omission | P2 | Moderate compute-prepass addition; restores lesson |
+| KI-003 | Skin camera and resize | Confirmed port omission | P2 | Moderate local input/resize addition |
+| KI-004 | Cone apex normals | Confirmed semantic translation defect | P2 | `normalize0`; preserves reference zero input |
+| KI-008 | Failed swap-chain resize | Confirmed port failure-path defect | P2 | Return failure and stop cleanly; recovery optional |
+| KI-005 | Water feature level/profiles | Confirmed compatibility departure | P3; P2 if FL10 is required | Restore profiles and feature level together |
+| KI-006 | Particle/water cameras | Confirmed port fidelity defect | P3 | Two translations and their explanations |
+| KI-011 | Skin anisotropy | Confirmed port fidelity defect | P3 | Set reference value 16 |
+| KI-012 | Partial initialization | Confirmed ownership defects | P3 | Consistent cleanup; no normal-path change |
+| KI-013 | Terrain requested resolution | Confirmed port fidelity defect | P3 | Restore 1024x768 |
+| KI-014 | DDS size arithmetic | Confirmed input-hardening issue | P3 | Bound dimensions and validate wide sizes |
+| KI-015 | Temporary allocations | Confirmed Odin lifetime issue | P3 | Scope/reset scratch allocations |
+| KI-016 | MS3D count reads | Confirmed input-hardening issue | P3 | Two explicit bounds checks |
+| KI-017 | Particle debug-count buffer | Confirmed optional-path ownership defect | P3 | Check creation and release the buffer |
+| KI-018 | Actual startup dimensions | Confirmed port fidelity defect | P3 | Use actual client/backbuffer dimensions |
+| KI-009 | Immediate mesh replacement | Real inherited weakness | P3 | Clean failure exit; rollback/retry optional |
+| KI-010 | ImageProcessor replacement | Real inherited weakness | P3 | Clean failure exit or complete temporary target pair |
+| KI-007 | Claimed missing mip chain | Disproved as a port regression | None | Mips would be an optional quality enhancement |
+
+Suggested batches: teaching explanations and inexpensive fidelity values; shared
+factory ownership; terrain LOD and SkinAndBones interaction; then resize and
+ownership failures. Parser hardening and inherited-behavior improvements can
+remain separate. Prefer explicit error, cleanup, and exit where a recovery
+framework would obscure the lesson.
+
+## Confirmed port and input-handling issues
+
+### KI-001 — Shared renderer uses an unrelated DXGI factory
+
+- [ ] Use the factory associated with the D3D device for swap-chain creation.
+
+[`renderer.create`](odin_port/glyph/renderer/renderer.odin#L123) creates a second
+factory unrelated to the one that enumerated the device's adapter. Mixing those
+DXGI objects is unsupported; rejection prevents every rendering sample from
+starting. No driver-specific rejection was reproduced during this audit.
+
+The [C++ implementation](Source/RendererDX11.cpp#L478) follows device -> DXGI
+adapter -> parent factory. Follow that chain and release temporary interfaces.
+The comment that a fresh factory is equivalent is incorrect. See
+[Microsoft's DXGI guidance](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/dxgi-best-practices).
+
+### KI-002 — Complex interlocking-terrain LOD is nonfunctional
+
+- [ ] Port the lookup compute prepass and bind its result at hull-shader `t1`.
+
+The [port](odin_port/apps/interlocking_terrain_tiles/main.odin#L489) leaves
+`texLODLookup` unbound. Selecting `hsComplex` with `L` therefore reads zeros
+and produces minimum tessellation instead of height-variance, neighbour-aware LOD.
+
+C++ calls `CreateComputeShaderResources` and `RunComputeShader` during
+initialization. Their [implementations](Applications/InterlockingTerrainTiles/App.cpp#L619)
+create a 32x32 `R32G32B32A32_FLOAT` UAV/SRV, dispatch the supplied compute shader,
+and bind the output for the hull shader. Restore creation, dispatch, UAV unbind,
+SRV binding, and cleanup. This moderate addition restores the lesson. Correct
+the false inherited-quirk explanation in code and README alongside implementation.
+
+### KI-003 — SkinAndBones omits camera and resize behavior
+
+- [ ] Forward camera input and recreate size-dependent state on `WM_SIZE`.
+
+The [callback](odin_port/apps/skin_and_bones/main.odin#L82) handles quit, screenshots,
+and replay, while [fixed matrices](odin_port/apps/skin_and_bones/main.odin#L415)
+leave the camera and 800x600 projection unchanged after input or resizing.
+
+The [C++ event handler](Applications/SkinAndBones/App.cpp#L224) delegates to
+[`RenderApplication`](Source/RenderApplication.cpp#L183), which forwards camera
+events and resizes the swap chain, views, and aspect ratio. Reuse the existing
+plain Odin camera and pending-resize pattern.
+
+Preserve `A` replay while clearing camera state on release. C++ forwards `A`
+key-down but consumes key-up for replay, which can latch left movement.
+Avoiding that inherited input conflict is a small documented improvement.
+
+### KI-004 — SkinAndBones generates NaN normals at the cone apex
+
+- [ ] Preserve zero-vector normalization behavior.
+
+At [cone.odin](odin_port/apps/skin_and_bones/cone.odin#L291), ring `v == 0`
+deterministically supplies zero to `linalg.normalize`, producing NaNs. The C++
+generator supplies the same zero vector, but
+[`Vector3f::Normalize`](Source/Vector3f.cpp#L42) leaves it zero. Use
+`linalg.normalize0` or a zero guard. This preserves CPU geometry semantics;
+it does not establish that all inherited shader-side degenerate normals are solved.
 
-## P1 — Shared renderer uses an unrelated DXGI factory
+### KI-008 — Failed swap-chain resize leaves invalid renderer state
 
-- [ ] Fix swap-chain creation to use the factory associated with the D3D device.
+- [ ] Propagate resize failure to every caller and stop rendering safely.
 
-Location: [`odin_port/glyph/renderer/renderer.odin`](odin_port/glyph/renderer/renderer.odin#L123)
+[`renderer.resize`](odin_port/glyph/renderer/renderer.odin#L203) releases the RTV,
+DSV, and backbuffer before `ResizeBuffers`. Failure returns without views while
+callers keep rendering; another resize calls `Release` through missing pointers.
+Device removal, allocation failure, or an outstanding backbuffer reference can
+trigger this. Later view-recreation steps can fail independently.
 
-`create_device` enumerates an adapter through one `IDXGIFactory1` and creates the
-D3D device from that adapter. `renderer.create` then calls
-`CreateDXGIFactory1` again and uses this second factory to create the swap chain.
-Mixing DXGI objects from different factory instances is unsupported. A driver or
-runtime that rejects the combination makes every Odin sample abort during
-startup even though device creation succeeded.
+The [C++ path](Source/RendererDX11.cpp#L1048) attempts to reacquire the buffer even
+after a failed resize, although it is not a complete recovery model. The simplest
+Odin remedy is a status return, defined partial-state cleanup, and clean exit.
+Recovery of old-size resources is optional. Current callers are ImmediateRenderer,
+ImageProcessor, ParticleStorm, WaterSimulation, DeferredRendering, and LightPrepass.
 
-The C++ implementation follows the supported ownership chain in
-[`Source/RendererDX11.cpp`](Source/RendererDX11.cpp#L482): query the device for
-its DXGI interface, obtain its adapter, then obtain that adapter's parent
-factory and call `CreateSwapChain` on it. The Odin renderer should do the same
-instead of creating a fresh factory. See Microsoft's
-[DXGI best practices](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/dxgi-best-practices).
+### KI-005 — WaterSimulation requires a higher feature level than the reference
 
-## P2 — Complex interlocking-terrain LOD is nonfunctional
+- [ ] Restore feature level 10 and shader-model 4 profiles together.
 
-- [ ] Port the terrain lookup compute prepass and bind its result at hull-shader `t1`.
+The port [compiles SM5](odin_port/apps/water_simulation/main.odin#L311) and
+[requests FL11](odin_port/apps/water_simulation/main.odin#L459). The reference
+[requests FL10](Applications/WaterSimulationI/App.cpp#L48), uses `vs_4_0` /
+`ps_4_0`, and uses [`cs_4_0`](Applications/WaterSimulationI/ViewSimulation.cpp#L84).
+This excludes the reference's lower-feature-level path. Treat it as P3 for the
+tested modern-hardware demos, P2 if FL10 is required. Compile and exercise that
+path when changing it; an FL11 run does not establish FL10 compute support on
+every device.
 
-Location: [`odin_port/apps/interlocking_terrain_tiles/main.odin`](odin_port/apps/interlocking_terrain_tiles/main.odin#L489)
+### KI-006 — ParticleStorm and WaterSimulation start from the wrong cameras
 
-The port deliberately leaves `texLODLookup` unbound. When the user presses `L`
-to select `hsComplex`, `ReadLookup` therefore returns zeros and every patch
-receives the minimum tessellation factor. The advertised height-variance,
-neighbour-aware LOD mode never runs.
+- [ ] Use final reference translations without adding the default node offset.
 
-The C++ sample calls `CreateComputeShaderResources` and `RunComputeShader` from
-[`Applications/InterlockingTerrainTiles/App.cpp`](Applications/InterlockingTerrainTiles/App.cpp#L168).
-Those helpers create a 32x32 `R32G32B32A32_FLOAT` UAV/SRV, dispatch
-`InterlockingTerrainTilesComputeShader.hlsl` over the height map, and bind the
-result as `texLODLookup` for the hull shader. Reproduce that resource creation,
-dispatch, UAV unbind, and SRV binding in the Odin sample. The existing comment
-that describes the missing lookup as an inherited C++ quirk is incorrect.
+The [particle](odin_port/apps/particle_storm/main.odin#L483) and
+[water](odin_port/apps/water_simulation/main.odin#L488) ports add `(0, 10, -20)`.
+Correct starting positions are `(-100, 60.5, -100)` and `(-100, 30.5, -100)`.
 
-## P2 — SkinAndBones omits inherited camera and resize behavior
+[`SpatialController::Update`](Include/SpatialController.inl#L32) assigns its
+translation to the root node. The [particle](Applications/ParticleStorm/App.cpp#L75)
+and [water](Applications/WaterSimulationI/App.cpp#L115) values are already final.
+Change the constants and additive-offset explanations, including README notes.
 
-- [ ] Forward camera input and recreate size-dependent rendering state on `WM_SIZE`.
+### KI-011 — SkinAndBones effectively disables anisotropic filtering
 
-Locations:
+- [ ] Set the cone material's `MaxAnisotropy` to 16.
 
-- [`odin_port/apps/skin_and_bones/main.odin`](odin_port/apps/skin_and_bones/main.odin#L82)
-- [`odin_port/apps/skin_and_bones/main.odin`](odin_port/apps/skin_and_bones/main.odin#L414)
+The [Odin sampler](odin_port/apps/skin_and_bones/main.odin#L319) selects anisotropic
+filtering with maximum 1; the [C++ material](Source/GeometryGeneratorDX11.cpp#L936)
+uses 16. This tiny correction restores the setting. It does not require a mip
+chain: KI-007 establishes that the reference PNG loader also creates one mip.
 
-The Odin callback handles only quit, screenshot, and animation-replay input,
-then renders with a permanently fixed view and projection. First-person camera
-input and live resize therefore have no effect; after a window resize, the
-swap chain and 800x600 projection remain unchanged.
+### KI-012 — Failed initialization leaks owned resources
 
-The C++ `App` derives from `RenderApplication` and delegates unhandled events to
-it in [`Applications/SkinAndBones/App.cpp`](Applications/SkinAndBones/App.cpp#L224).
-`RenderApplication` forwards camera events and handles `WINDOW_RESIZE` by
-resizing the swap chain and render views and updating the camera aspect ratio
-in [`Source/RenderApplication.cpp`](Source/RenderApplication.cpp#L183). Reuse
-the first-person-camera and pending-resize approach already present in the Odin
-particle and water samples, while preserving the sample's `A` replay behavior.
+- [ ] Establish consistent partial-result and local-resource cleanup.
 
-## P2 — SkinAndBones generates NaN normals at the cone apex
+Representative paths include [renderer creation](odin_port/glyph/renderer/renderer.odin#L85)
+and [SkinAndBones setup](odin_port/apps/skin_and_bones/main.odin#L227). They acquire
+resources incrementally, while callers install destruction defers only after
+success. Later failure discards earlier owned objects. This repeats across scene
+and pipeline construction.
 
-- [ ] Preserve the C++ zero-vector normalization behavior when generating cone normals.
+Prefer constructors that clean partial results on failure, with an explicit
+ownership contract for every return. Register cleanup immediately after acquiring
+a local. A scene destructor alone is insufficient:
 
-Location: [`odin_port/apps/skin_and_bones/cone.odin`](odin_port/apps/skin_and_bones/cone.odin#L291)
+- DeferredRendering [setup](odin_port/apps/deferred_rendering/main.odin#L683)
+  acquires local shader blobs before their eventual defers.
+- DeferredRendering and LightPrepass create scene and targets before checking both
+  success flags ([example](odin_port/apps/deferred_rendering/main.odin#L1013)).
+  A successful sibling needs cleanup when the other fails. ParticleStorm and
+  WaterSimulation have the corresponding scene/depth pattern.
+- Partial nested-helper values that never reach an owning field cannot be cleaned
+  by the outer destructor.
+- ImageProcessor checks its [initial pair](odin_port/apps/image_processor/main.odin#L422)
+  before registering cleanup. This startup leak is distinct from KI-010.
 
-The `v == 0` ring collapses to the cone apex, so `x`, `z`, and the computed
-`y` component of its normal are all zero. Odin's `linalg.normalize` divides by
-the vector length and produces NaNs for this deterministic zero input. Those
-values are uploaded as vertex normals and can contaminate lighting and
-tessellation calculations.
+No normal rendering behavior needs to change. Use one visible ownership convention
+rather than a new abstraction framework.
 
-The corresponding C++ code also calls `Normalize`, but
-[`Vector3f::Normalize`](Source/Vector3f.cpp#L42) explicitly substitutes a
-nonzero divisor for zero magnitude and leaves the vector at zero. Use
-`linalg.normalize0` or an explicit zero-length guard to preserve that behavior.
+### KI-013 — Terrain starts at the wrong requested resolution
 
-## P2 — WaterSimulation unnecessarily requires feature level 11
+- [ ] Restore the reference's 1024x768 requested client size.
 
-- [ ] Restore the original feature-level 10 and shader-model 4 path.
+The [port](odin_port/apps/interlocking_terrain_tiles/main.odin#L33) requests 640x480;
+[C++](Applications/InterlockingTerrainTiles/App.cpp#L52) requests 1024x768. Both
+are 4:3, but lower resolution changes visible terrain detail. This differs from
+respecting the actual size Windows creates (KI-018).
 
-Locations:
+### KI-014 — DDS cube-map size arithmetic can wrap
 
-- [`odin_port/apps/water_simulation/main.odin`](odin_port/apps/water_simulation/main.odin#L311)
-- [`odin_port/apps/water_simulation/main.odin`](odin_port/apps/water_simulation/main.odin#L459)
+- [ ] Validate dimensions and the six-face payload before indexing or narrowing.
 
-The port compiles the compute, vertex, and pixel shaders as shader model 5.0
-and requests feature level 11.0. It consequently refuses to start on feature
-level 10 hardware even though the shaders use no feature requiring level 11.
+The [DDS reader](odin_port/apps/immediate_renderer/skybox.odin#L94) computes
+`width * height * 4` in `u32` before widening. An otherwise accepted 128-byte
+header with width and height 65536 wraps the face size to zero, passes validation,
+and reaches `&data[128]` outside the slice. Zero dimensions do likewise.
+This is a source-derived trigger, not a runtime reproduction here.
 
-The reference creates a feature-level 10.0 renderer in
-[`Applications/WaterSimulationI/App.cpp`](Applications/WaterSimulationI/App.cpp#L48),
-compiles the water compute shader as `cs_4_0` in
-[`Applications/WaterSimulationI/ViewSimulation.cpp`](Applications/WaterSimulationI/ViewSimulation.cpp#L81),
-and compiles the visualization shaders as `vs_4_0` and `ps_4_0`. Change the
-Odin profiles to their 4.0 forms and pass `._10_0` to `renderer.create`.
+Reject zero and out-of-range dimensions, calculate sizes widely, validate the
+complete payload, then narrow. Pitch `width * 4` must also fit. The bundled
+texture is trusted; this is isolated hardening, not a request for a general DDS
+decoder or an ordinary-path failure.
 
-## P2 — ParticleStorm and WaterSimulation start from the wrong cameras
+### KI-015 — Scratch allocations accumulate on screenshots and title changes
 
-- [ ] Use the final reference camera translations without adding the default node offset.
+- [ ] Bound temporary allocation lifetimes after their last use.
 
-Locations:
+Screenshot callers use `fmt.tprintf`, and
+[`save_backbuffer_png`](odin_port/glyph/renderer/renderer.odin#L369) uses
+`fmt.ctprintf`. Several loops never reset `context.temp_allocator`.
+TessellationParams also allocates for repeated
+[title changes](odin_port/apps/tessellation_params/main.odin#L149), including
+UTF-16 conversion. The PLY parser retains startup scratch allocations too.
 
-- [`odin_port/apps/particle_storm/main.odin`](odin_port/apps/particle_storm/main.odin#L483)
-- [`odin_port/apps/water_simulation/main.odin`](odin_port/apps/water_simulation/main.odin#L488)
+This is event-driven growth, not per-frame growth while idle. Reset at a safe
+frame boundary, as particle/water/deferred/light-prepass already do, or scope the
+allocations. Include conversions as well as formatting; do not reset while a
+retained slice or string still refers to temporary storage.
 
-The ports add RenderApplication's earlier default node position `(0, 10, -20)`
-to the application-specified camera positions. ParticleStorm therefore starts
-at `(-100, 70.5, -120)` instead of `(-100, 60.5, -100)`, and WaterSimulation
-starts at `(-100, 40.5, -120)` instead of `(-100, 30.5, -100)`. This changes
-the initial view and navigation origin on every run.
+### KI-016 — MS3D loader reads counts past truncated input
 
-`SpatialController::Update` assigns its stored translation directly to the
-node in [`Include/SpatialController.inl`](Include/SpatialController.inl#L32);
-it does not add the prior node transform. The values passed to `Spatial()` by
-[`Applications/ParticleStorm/App.cpp`](Applications/ParticleStorm/App.cpp#L74)
-and [`Applications/WaterSimulationI/App.cpp`](Applications/WaterSimulationI/App.cpp#L114)
-are therefore already the final positions. Use those values verbatim and
-correct the comments that currently describe the translations as additive.
+- [ ] Check two bytes exist before each section-count read.
 
-## P2 — PNG loading drops the reference mip chain
+After the accepted 14-byte header, [the loader](odin_port/glyph/ms3d/ms3d.odin#L65)
+reads a two-byte vertex count without checking it exists. It repeats this after
+the vertex records for the triangle count. Either truncation panics instead of
+returning `ok = false`.
+
+Add explicit two-byte checks and descriptive errors. The `u16` counts already
+widen to `int` before record-size multiplication and fit the supported x64 target;
+a general checked-arithmetic framework is unnecessary here.
 
-- [ ] Generate mipmaps for loaded PNG textures.
+### KI-017 — ParticleStorm debug-count buffer lacks cleanup
 
-Location: [`odin_port/glyph/renderer/renderer.odin`](odin_port/glyph/renderer/renderer.odin#L301)
+- [ ] Check creation and release the optional staging buffer.
 
-`load_texture_png` creates one immutable mip level. Several samples then use
-mip-linear or anisotropic samplers with unrestricted LODs, so minified textures
-are forced to sample full-resolution LOD 0 and can visibly alias or shimmer.
-
-The C++ loader passes an immediate context to `CreateWICTextureFromFileEx` in
-[`Source/RendererDX11.cpp`](Source/RendererDX11.cpp#L1303), enabling automatic
-mipmap generation when the format supports it. The Odin loader should create a
-default-usage texture with the required render-target/shader-resource flags,
-upload level 0, create the SRV, and call `GenerateMips`, with appropriate
-failure cleanup.
-
-## P2 — Failed swap-chain resize leaves invalid renderer state
-
-- [ ] Make `renderer.resize` transactional or propagate failure to every caller.
-
-Location: [`odin_port/glyph/renderer/renderer.odin`](odin_port/glyph/renderer/renderer.odin#L203)
-
-Before calling `ResizeBuffers`, the function unbinds and releases the RTV, DSV,
-and backbuffer. If `ResizeBuffers` fails, it returns with all three fields nil.
-Callers continue rendering, so the next frame dereferences nil views; another
-resize fails even earlier while attempting to release them. Plausible causes
-include an outstanding indirect backbuffer reference, device removal, and
-allocation failure.
-
-The C++ path logs a failed resize but still attempts to reacquire the existing
-buffer and recreate its RTV in
-[`Source/RendererDX11.cpp`](Source/RendererDX11.cpp#L1048). The Odin function
-should restore valid old-size resources after failure, or return a status and
-require callers to suspend rendering or terminate cleanly. Failures after
-`ResizeBuffers` succeeds also need to leave the renderer in a defined state.
-
-## P2 — Immediate mesh buffer allocation failures suppress retries
-
-- [ ] Replace dynamic mesh buffers only after successful allocation and upload.
-
-Location: [`odin_port/apps/immediate_renderer/mesh.odin`](odin_port/apps/immediate_renderer/mesh.odin#L113)
-
-When a mesh needs a larger buffer, the current buffer is released before the
-replacement `CreateBuffer` result is checked. Capacity is advanced even when
-creation returns nil, and `dirty` is cleared even when allocation or mapping
-fails. An initial allocation failure, or a later failure while growing, thus
-makes the mesh disappear and prevents same-size commits from retrying; a growth
-failure also discards a previously usable buffer.
-
-Create replacement vertex and index buffers into temporaries, check every D3D
-result, upload successfully, and only then swap them into the mesh and update
-capacity. Keep `dirty` set when work fails so a later frame can retry.
-
-## P2 — ImageProcessor discards valid targets before replacements succeed
-
-- [ ] Validate new filter targets before installing them during image changes.
-
-Location: [`odin_port/apps/image_processor/main.odin`](odin_port/apps/image_processor/main.odin#L458)
-
-Pressing `I` destroys the current intermediate and output targets before
-creating size-matched replacements, and both returned success flags are
-ignored. If texture, SRV, or UAV creation fails, subsequent filtering continues
-with partial or nil targets, leaving the viewer black and leaking partially
-created objects until exit.
-
-Create both replacement targets as temporaries, clean up either partial result
-on failure, and keep the existing image and targets active until both new
-targets are complete. Alternatively, stop processing with a clear error after
-cleanly releasing all state.
-
-## P3 — SkinAndBones effectively disables anisotropic filtering
-
-- [ ] Set the cone material's anisotropy to the reference value of 16.
-
-Location: [`odin_port/apps/skin_and_bones/main.odin`](odin_port/apps/skin_and_bones/main.odin#L319)
-
-The sampler selects `ANISOTROPIC` filtering but sets `MaxAnisotropy` to 1,
-which removes the intended quality improvement at oblique viewing angles. The
-C++ cone material sets it to 16 in
-[`Source/GeometryGeneratorDX11.cpp`](Source/GeometryGeneratorDX11.cpp#L932).
-
-## P3 — Failed initialization leaks partially created resources
-
-- [ ] Make renderer and scene constructors clean up partial results before returning failure.
-
-Representative locations:
-
-- [`odin_port/glyph/renderer/renderer.odin`](odin_port/glyph/renderer/renderer.odin#L85)
-- [`odin_port/apps/skin_and_bones/main.odin`](odin_port/apps/skin_and_bones/main.odin#L227)
-
-Construction procedures populate their result structs incrementally and may
-return after any later shader, buffer, texture, view, or state creation fails.
-Callers register their destruction `defer` only after receiving `ok == true`,
-so an `ok == false` result containing earlier COM objects is discarded without
-releasing them. `renderer.create` can similarly leak its device, context,
-swap chain, or views after a later initialization failure.
-
-Add failure cleanup inside each constructor, or arrange for the caller to
-destroy partial results regardless of the success flag. Apply the solution as
-a repeated pattern across the other scene and pipeline setup procedures rather
-than fixing only the representative SkinAndBones path.
-
-## P3 — InterlockingTerrainTiles starts at the wrong resolution
-
-- [ ] Restore the reference application's 1024x768 initial client size.
-
-Location: [`odin_port/apps/interlocking_terrain_tiles/main.odin`](odin_port/apps/interlocking_terrain_tiles/main.odin#L33)
-
-The Odin sample requests 640x480, while the C++ application configures
-1024x768 in
-[`Applications/InterlockingTerrainTiles/App.cpp`](Applications/InterlockingTerrainTiles/App.cpp#L52).
-Both are 4:3, so the projection shape is unchanged, but the lower resolution
-changes the reference presentation and reduces the detail visible in a sample
-specifically demonstrating tessellation and terrain LOD.
-
-## P3 — DDS cube-map size arithmetic can wrap
-
-- [ ] Validate DDS dimensions using checked wide arithmetic before indexing or narrowing.
-
-Location: [`odin_port/apps/immediate_renderer/skybox.odin`](odin_port/apps/immediate_renderer/skybox.odin#L94)
-
-The hand-written loader computes `width * height * 4` while both dimensions
-are `u32`. A malformed DDS header can wrap this multiplication before it is
-converted to `int`, allowing the truncation check to accept an undersized file.
-Later face offsets can then index outside `data`; `width * 4` used for
-`SysMemPitch` can wrap independently.
-
-Compute sizes in a checked `u64` or `int`, reject dimensions outside the D3D11
-limits, verify the complete six-face payload, and only then narrow values for
-the D3D descriptors. The bundled texture is trusted, so this is input-hardening
-rather than an ordinary sample-path failure.
-
-## P3 — Screenshot formatting accumulates temporary allocations
-
-- [ ] Bound the temporary allocator lifetime in samples that support repeated screenshots.
-
-Representative locations:
-
-- [`odin_port/apps/immediate_renderer/main.odin`](odin_port/apps/immediate_renderer/main.odin#L751)
-- [`odin_port/glyph/renderer/renderer.odin`](odin_port/glyph/renderer/renderer.odin#L369)
-
-Screenshot paths are built with `fmt.tprintf`, and `save_backbuffer_png` uses
-`fmt.ctprintf`; both allocate from `context.temp_allocator`. Several sample
-loops, including ImmediateRenderer, never reset that allocator. Memory usage
-therefore grows with every screenshot until process exit. This is not a
-per-frame leak when no screenshot is requested, but repeated captures make it
-observable in a long-running session.
-
-Reset the temporary allocator at a safe frame boundary, as the larger particle,
-water, deferred, and light-prepass samples already do, or use an explicitly
-scoped allocator for screenshot formatting.
-
-## P3 — MS3D loader reads section counts past truncated input
-
-- [ ] Bounds-check the vertex and triangle counts before reading them.
-
-Location: [`odin_port/glyph/ms3d/ms3d.odin`](odin_port/glyph/ms3d/ms3d.odin#L65)
-
-After accepting a valid 14-byte header, the loader immediately reads the
-two-byte vertex count at offsets 14 and 15. A file truncated exactly after the
-header therefore panics on a slice bounds check instead of returning
-`ok = false`. The triangle-count read repeats the same issue when a file ends
-exactly after its vertex records.
-
-Before each `read_u16`, require `len(data) >= pos + 2` and return a descriptive
-truncation error otherwise. Size calculations based on the counts should also
-remain checked before multiplication and narrowing.
-
-## Reviewed reports not classified as port regressions
-
-The following review comments were investigated but are not included above as
-Odin port regressions:
-
-- Screenshot capture currently occurs after `Present`. With the discard swap
-  effect, the saved backbuffer contents are not guaranteed. However, the C++
-  [`Application::MessageLoop`](Source/Application.cpp#L125) also calls
-  `Update`—which presents—before `TakeScreenShot`. This is a real inherited
-  behavior issue. Fixing it would be a reasonable documented departure if
-  reliable screenshots are preferred over exact call-order fidelity.
-- DeferredRendering tests far-plane intersection using `light.Range` while
-  drawing a volume scaled to `1.1 * light.Range`. The C++ implementation uses
-  the same calculation in
-  [`Applications/DeferredRendering/ViewLights.cpp`](Applications/DeferredRendering/ViewLights.cpp#L354).
-- TessellationParams can retain a quad-only edge or inside selection after
-  switching to the triangle domain. The C++ event handler preserves the same
-  selection and rejects edits through its range checks.
-- The reported STL face-count multiplication overflow was disproved: on the
-  supported 64-bit target, the calculation and subsequent length comparison
-  reject the malformed count.
-- Converting `COLOR_WRITE_ENABLE_ALL` to the descriptor's `u8` field is valid;
-  replacing the conversion with `transmute` is unnecessary.
-- The old `run.bat` documentation typo is obsolete after replacing the batch
-  launcher with the `Justfile` workflow.
-
-## Review validation record
-
-The review that produced this list ran the following local validation:
-
-- `just verify`: all 15 applications passed strict `odin check`; all 8
-  `glyph/d3d_math` tests passed with memory tracking.
-- `just asan basic_application`: build passed; executable was not run.
-- `just asan immediate_renderer`: build passed; executable was not run.
-
-No Direct3D runtime, tracking-allocator application run, or debug-layer
-validation was performed. Compiler checks and sanitizer builds do not establish
-behavioral equivalence for the issues above.
+With `-define:DEBUG_COUNTS=true`, the
+[debug block](odin_port/apps/particle_storm/main.odin#L640) creates a static staging
+buffer and never releases it. This is one retained allocation, not per-frame
+growth. Failed creation can also send nil to `CopyStructureCount` and `Map`.
+The [C++ equivalent](Applications/ParticleStorm/ViewSimulation.cpp#L195) registers
+the resource with the renderer, whose shutdown deletes owned resources.
+
+Create the optional buffer in main/scene initialization, check success, and
+release it normally. Direct `CopyStructureCount` into staging is supported;
+the defect is ownership and failure handling, not that destination usage. See
+[Microsoft's contract](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-copystructurecount).
+
+### KI-018 — Rendering samples ignore actual startup dimensions
+
+- [ ] Initialize backbuffers and dependent targets from the actual created size.
+
+All 14 rendering applications pass `WIDTH, HEIGHT` to `renderer.create`, although
+[window initialization](odin_port/glyph/window/window.odin#L130) records actual
+`GetClientRect` dimensions. If Windows constrains the initial client area, the
+backbuffer is oversized and scaled into the smaller window. Dependent targets
+also use requested dimensions, for example in
+[DeferredRendering](odin_port/apps/deferred_rendering/main.odin#L1000).
+
+C++ [swap-chain setup](Source/RenderApplication.cpp#L114) uses
+[`GetWidth`/`GetHeight`](Source/RenderWindow.cpp#L53), which query the client
+rectangle. Deferred rendering derives dimensions from the
+[actual target](Applications/DeferredRendering/ViewDeferredRenderer.cpp#L35).
+Pass validated `win.width/height` to renderer creation, then `r.width/height`
+to dependent targets. Keep constants for requesting the window size.
+
+Do not call every projection/viewport adjustment reference restoration: some
+C++ samples retain requested values there. Compare each one. RotatingCube uses
+actual dimensions for its [C++ projection](Applications/RotatingCube/App.cpp#L305),
+while [Odin](odin_port/apps/rotating_cube/main.odin#L234) uses constants.
+No constrained-desktop runtime reproduction was performed during this audit.
+
+## Real inherited weaknesses: optional improvements
+
+### KI-009 — Immediate mesh replacement failures suppress retries
+
+- [ ] Optionally make allocation/upload failure explicit and terminate cleanly.
+
+[`mesh_commit`](odin_port/apps/immediate_renderer/mesh.odin#L113) releases old
+buffers before replacement succeeds, advances capacity even on failure, and
+clears `dirty` after failed allocation or mapping. This can remove the mesh and
+suppress same-size retries.
+
+The [C++ growable buffer](Include/TGrowableBufferDX11.inl#L55) also advances
+capacity, deletes its resource, then creates the replacement. Its
+[vertex uploader](Include/TGrowableVertexBufferDX11.inl#L30) and index equivalent
+clear the upload flag before mapping and copying. Recovery is an improvement to
+inherited behavior, not fidelity restoration.
+
+A status return and clean exit suffice for the demo. Preserving a complete
+previous vertex/index state and retrying is optional; if implemented, capacities
+and `dirty` must reflect only a complete successful commit.
+
+### KI-010 — ImageProcessor discards targets before replacement succeeds
+
+- [ ] Optionally handle replacement failure without continuing with invalid targets.
+
+Pressing `I` [destroys the pair](odin_port/apps/image_processor/main.odin#L458)
+before creating replacements and ignores success. Partial results remain stored
+and can be released on the next switch or exit; they are not orphaned
+replacement-time leaks. The distinct startup leak is KI-012.
+
+The [C++ image switch](Applications/ImageProcessor/App.cpp#L318) also advances
+the image and resizes twice. Despite its comment,
+[`ResizeTexture`](Source/RendererDX11.cpp#L846) uses `ReleaseAndGetAddressOf`
+before successful creation, then attempts view recreation despite failure.
+
+Either report failure and exit cleanly, or create both targets as temporaries and
+install them with the new image index only after both succeed. Both improve
+inherited failure behavior without changing filtering algorithms.
+
+### Other inherited behavior to preserve or change explicitly
+
+- **Screenshots after presentation:** C++
+  [`Application::MessageLoop`](Source/Application.cpp#L125) calls `Update` (which
+  presents) before capture, as do the ports. Discard presentation does not promise
+  preserved backbuffer contents. Capture before `Present` is a small optional
+  departure for reliable screenshots.
+- **Deferred light-volume clipping:** the
+  [reference](Applications/DeferredRendering/ViewLights.cpp#L362) tests `Range`
+  while drawing at `1.1 * Range`. Its matrix-vector helper was checked; Odin
+  computes the same value. An adjustment is an inherited correction.
+- **Tessellation selection:** quad-to-triangle switching preserves a potentially
+  quad-only selection in both versions; C++ setters reject out-of-range edits.
+- **Curved PN adaptive mode:** C++ loads PLY without adjacency (the default in
+  [GeometryLoaderDX11.h](Include/GeometryLoaderDX11.h#L37)), producing three-point
+  patches while the alternate hull shader expects six. Repair needs adjacency
+  generation and is a separate optional exercise.
+
+## Disproved or obsolete reports
+
+### KI-007 — PNG loading does not drop a reference mip chain
+
+The prior P2 report was incorrect. The
+[C++ call](Source/RendererDX11.cpp#L1303) passes an immediate context to
+`CreateWICTextureFromFileEx`, but passes `nullptr` for the SRV output.
+The matching [October 2025 DirectXTK implementation](https://github.com/microsoft/DirectXTK/blob/oct2025/Src/WICTextureLoader.cpp)
+enables autogeneration only when `d3dContext && textureView` is true. It therefore
+creates one mip here. `ResourceProxyDX11` creates a view later, which does not
+generate mips. The Odin PNG loader also creates one mip.
+
+Generating mips could improve minification quality but changes reference output
+and resource setup. Retain it only as an optional extension. This was verified
+against the release identified by the installed NuGet package, not inferred
+solely from the loader's advertised capabilities.
+
+- **STL count overflow:** disproved on supported x64. The count widens before
+  multiplication, the maximum byte total fits, and the length check rejects
+  truncated input.
+- **Color-write-mask conversion:** conversion to the descriptor's `u8` field is
+  valid. Replacing it with `transmute` is unnecessary.
+- **Particle staging-copy misuse:** rejected; KI-017 concerns ownership and failed
+  creation, not the supported staging destination.
+- **Old `run.bat` typo:** obsolete after the `Justfile` workflow.
+
+## Explanations to correct alongside later implementation
+
+The guide has been corrected in this documentation pass. Code and sample README
+edits remain pending review. In addition to explanations attached to issues above:
+
+- `skin_and_bones/cone.odin` describes `world * inv_bind`, although the correct
+  implementation uses `inv_bind * world`. Its statement that compositions of
+  rotation and translation can shear is wrong: rigid transforms stay rigid;
+  blending skinning transforms can introduce non-rigid behavior.
+- Camera copies accumulate mouse deltas and clamp total pitch, while C++ overwrites
+  deltas and clamps each frame's increment. These reasonable usability departures
+  should be distinguished from exact parity.
+
+## Validation and limits
+
+The 2026-09-06 current-tree audit ran `just verify`: all 15 applications passed
+strict `odin check`, and all 8 `glyph/d3d_math` tests passed with memory tracking.
+The suite was rerun successfully during the documentation update. Temporary Odin
+probes outside the repository confirmed `normalize0` versus `normalize` at zero,
+affine/projective transforms, cbuffer offsets, and that API-invalid flag sets can
+be expressed. The installed compiler was `dev-2026-09-nightly:a2fb372`; its matrix
+alignment is 4 bytes, disproving the guide's stale 32-byte rule, which was removed.
+The optional particle path also passed
+`odin check apps/particle_storm -collection:glyph=glyph -define:DEBUG_COUNTS=true -warnings-as-errors -strict-style -error-pos-style:unix`
+from `odin_port/`; it was not run. Documentation checks validated 58 local links,
+line-reference bounds, code fences, and 18 unique issue IDs. `git diff --check`
+passed after the edits.
+These checks do not establish visual equivalence, failure recovery, or runtime
+shader compilation.
+
+The earlier 2026-08-11 record reports the same suite and successful
+`just asan basic_application` / `just asan immediate_renderer` builds, without
+executing them. Those are historical results, not new sanitizer runs.
+
+Neither audit performed new graphical comparisons, application tracking-allocator
+runs, debug-layer validation, constrained-desktop tests, or failure injection.
+Reported paths and repeated patterns were traced; this is not proof that every
+combination of sample controls and hardware behavior is defect-free.

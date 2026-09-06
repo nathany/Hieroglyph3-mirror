@@ -5,6 +5,8 @@
 - Treat the Odin port as a learning-oriented reference implementation of the book's C++ code.
 - Treat `D3D11-Odin-Guide.md` as a human-facing companion for readers implementing the book's examples by hand. Keep agent-specific workflow, review, and automation instructions in `AGENTS.md`, not in the guide.
 - Preserve the observable behavior and structure of the corresponding book sample unless Odin semantics, undefined behavior, or a clearly broken advertised path requires a documented deviation.
+- Preserve the sample's rendering stages, shader contracts, and behavior while replacing engine architecture with small Odin structs and procedures where useful. Recreating the scene graph, reflection system, or event framework is not required.
+- Record accepted deviations in reader-facing sample notes and concise matching code comments. Prefer a clear error and clean exit for an unrecoverable demo failure; a general retry or device-recovery framework is not required.
 - Keep the legacy C++ sources available as the behavioral reference. Do not modernize or otherwise change them unless the task explicitly includes that work.
 - This repository is a playground: prefer small, reviewable changes and explain intentional departures from the reference implementation.
 
@@ -19,7 +21,9 @@
 
 - Before changing a sample, locate and compare its counterpart under `Applications/` and any relevant engine code under `Source/`.
 - Treat executable C++ behavior, including the semantics of helpers it calls, as the authority for reference fidelity. Treat comments and documentation that claim a quirk is inherited as hypotheses to verify against the C++ implementation.
+- Trace actual arguments and conditional branches through helpers, including the dependency version used by the repository. A helper's advertised capability does not establish that this call enables it; nullable output parameters and flags can change behavior.
 - Distinguish an Odin port regression from inherited book behavior, an intentional documented deviation, and optional robustness work.
+- Classify an issue separately from its repair priority. Consider its concrete trigger, effect on the lesson, supported hardware and trusted assets, and the smallest useful fix. An inherited defect may deserve repair; an input-hardening issue may remain low priority.
 - Compare the complete behavior surface of a changed sample: startup camera and transforms, input and resize forwarding, requested feature levels and shader profiles, resource creation and binding, mip and sampler settings, and render/capture/`Present` ordering.
 - Preserve Direct3D lifecycle and ownership invariants, especially resource creation failure paths, resize handling, `Present` behavior, mapped-resource bounds, COM releases, and GPU/CPU synchronization.
 - Check Odin-specific hazards such as checked size arithmetic before narrowing, integer and enum conversions, normalization of zero-length vectors, partial-initialization cleanup, `defer` scope, temporary allocator lifetimes in long-running loops, slices that outlive their storage, actual versus requested dimensions, and accidental shadowing.
@@ -36,8 +40,10 @@
 ## Review expectations
 
 - Review the requested diff against its stated base, then inspect enough reference code and call sites to establish the affected behavior.
+- For a fresh audit, review the requested current-tree scope and record the revision instead of inferring a historical diff. The introduced-by-change finding bar applies to diff reviews; current-tree audits may report older defects with their provenance stated.
 - For reference-fidelity conclusions, verify both the corresponding C++ call site and any helper implementation whose language-specific semantics could change the result.
 - Prioritize reproducible correctness, memory safety, API misuse, and behavioral divergence. Skip subjective style feedback unless it obscures a defect or conflicts with this file.
 - Describe the concrete trigger and consequence of each issue, use the narrowest useful location, and avoid speculative findings.
 - Treat passing `odin check`, ASan, the tracking allocator, and debug-layer validation as evidence when they were actually run, while still reviewing semantic behavior those tools cannot cover.
 - Label inherited book issues as such; do not present them as regressions introduced by the port.
+- Treat previous findings and rejected reports as hypotheses to revalidate. Record the evidence for rejecting or reclassifying a report as well as for accepting it, and state any uninspected scope or runtime path.
