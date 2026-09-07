@@ -62,6 +62,10 @@ load :: proc(filename: string) -> (mesh: Mesh, ok: bool) {
 	// (u8 flags, 3 x f32 position, i8 bone, u8 refcount).
 	VERTEX_SIZE :: 15
 	pos := 14
+	if len(data) < pos + 2 {
+		fmt.eprintln(filename, "has truncated vertex count")
+		return
+	}
 	vertex_count := int(read_u16(data, pos))
 	pos += 2
 	if len(data) < pos + vertex_count * VERTEX_SIZE {
@@ -80,6 +84,10 @@ load :: proc(filename: string) -> (mesh: Mesh, ok: bool) {
 	// 3 x u16 indices, 3 x 3 x f32 normals, 3 x f32 s, 3 x f32 t,
 	// u8 smoothing group, u8 group index).
 	TRIANGLE_SIZE :: 70
+	if len(data) < pos + 2 {
+		fmt.eprintln(filename, "has truncated triangle count")
+		return
+	}
 	triangle_count := int(read_u16(data, pos))
 	pos += 2
 	if len(data) < pos + triangle_count * TRIANGLE_SIZE {

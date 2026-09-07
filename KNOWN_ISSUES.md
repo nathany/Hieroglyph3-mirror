@@ -42,7 +42,7 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 | KI-013 | Terrain requested resolution | ✅ Fixed port fidelity defect | P3 | Restore 1024x768 |
 | KI-014 | DDS size arithmetic | ✅ Fixed input-hardening issue | P3 | Bound dimensions and validate wide sizes |
 | KI-015 | Temporary allocations | Confirmed Odin lifetime issue | P3 | Scope/reset scratch allocations |
-| KI-016 | MS3D count reads | Confirmed input-hardening issue | P3 | Two explicit bounds checks |
+| KI-016 | MS3D count reads | ✅ Fixed input-hardening issue | P3 | Two explicit bounds checks |
 | KI-017 | Particle debug-count buffer | ✅ Fixed optional-path ownership defect | P3 | Check creation and release the buffer |
 | KI-018 | Actual startup dimensions | Confirmed port fidelity defect | P3 | Use actual client/backbuffer dimensions |
 | KI-009 | Immediate mesh replacement | Real inherited weakness | P3 | Clean failure exit; rollback/retry optional |
@@ -321,7 +321,11 @@ retained slice or string still refers to temporary storage.
 
 ### KI-016 — MS3D loader reads counts past truncated input
 
-- [ ] Check two bytes exist before each section-count read.
+- [x] ✅ Check two bytes exist before each section-count read.
+
+**Verified fix:** MS3D loading now checks that each two-byte section count is present before reading it. Six truncated-count fixtures reject safely under ASan; all three bundled models still load. All four consuming demos ran successfully with unchanged startup visuals.
+
+Original finding (before the fix):
 
 After the accepted 14-byte header, [the loader](odin_port/glyph/ms3d/ms3d.odin#L65)
 reads a two-byte vertex count without checking it exists. It repeats this after

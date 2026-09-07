@@ -282,6 +282,10 @@ Normal and DEBUG_COUNTS checks passed, along with just asan particle_storm and a
 
 just check immediate_renderer and just asan immediate_renderer passed. An ASan hidden probe tested zero dimensions, 65536x65536 overflow input, oversized dimensions, maximum-size truncated input, header-only and one-byte-short payloads, plus a valid 2x2 six-face cube. All invalid inputs returned false before D3D creation; valid creation had no D3D warnings/errors. The bundled skybox rendered in an eight-capture debug mode sweep and an ASan resize/restore run, both exit 0 with clean diagnostics. Evidence: p3-fixes/KI-014/, KI-014-asan/, dds-probe-output.txt.
 
+### KI-016
+
+`just verify` passed all 15 strict checks and eight tracked math tests; `just asan basic_tessellation` and its standalone startup/resize/restore run passed. An ASan probe importing the actual MS3D loader rejected six missing/partial vertex or triangle count fixtures and loaded hedra, box, and Sample_Scene. Debugger-backed startup runs of BasicTessellation, SkinAndBones, DeferredRendering, and LightPrepass exited normally; the only diagnostic was LightPrepass's retained mask-pass warning. All four startup captures were inspected. Evidence: `p3-fixes/ms3d-probe/`, `ms3d-probe-output.txt`, `KI-016/`, and `KI-016-asan/`.
+
 ## Retained local evidence
 
 Artifacts are outside the repository under:
