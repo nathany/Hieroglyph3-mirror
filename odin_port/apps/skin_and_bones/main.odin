@@ -351,7 +351,7 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 		AddressU       = .WRAP,
 		AddressV       = .WRAP,
 		AddressW       = .WRAP,
-		MaxAnisotropy  = 1,
+		MaxAnisotropy  = 16, // GenerateWeightedSkinnedCone's material setting.
 		ComparisonFunc = .NEVER,
 		MaxLOD         = d3d11.FLOAT32_MAX,
 	}

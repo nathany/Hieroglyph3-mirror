@@ -219,7 +219,7 @@ for triple speed, and right-drag to look. Releasing **A** both stops strafing an
 replays the animation; this avoids C++ consuming that release and latching left
 movement. Resize recreates the backbuffer/depth views and projection, and failure
 exits cleanly (KI-003 fixed). The camera follows the other Odin samples' accumulated
-mouse deltas and total-pitch clamp. Anisotropy still differs from C++ (KI-011).
+mouse deltas and total-pitch clamp. The cone uses C++'s anisotropy 16 (KI-011 fixed).
 
 ### curved_pn_triangles
 

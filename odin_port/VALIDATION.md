@@ -262,6 +262,10 @@ Each issue below was committed after its recorded checks. Artifacts are under
 
 From ea0b0a1, ParticleStorm and WaterSimulation camera translations were corrected to (-100,60.5,-100) and (-100,30.5,-100). Both just check recipes passed. Both debug runs exercised movement, resize and restore (five captures each, exit 0). Startup rendering was inspected. Water had no D3D messages; ParticleStorm retained only the known KI-020 UAV hazard. Evidence: p3-fixes/KI-006/.
 
+### KI-011
+
+SkinAndBones just check passed. A hidden probe of actual setup queried ANISOTROPIC/MaxAnisotropy=16 with no setup warnings/errors. The ten-capture debug run exercised animation, replay, movement, oblique right-drag views and resize/restore, with exit 0 and no D3D messages. No mip-chain changes were made. Evidence: p3-fixes/KI-011/ and sampler-probe-output.txt.
+
 ## Retained local evidence
 
 Artifacts are outside the repository under:

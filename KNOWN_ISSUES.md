@@ -37,7 +37,7 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 | KI-008 | Failed swap-chain resize | ✅ Fixed port failure-path defect | P2 | Return failure and stop cleanly; recovery optional |
 | KI-005 | Water feature level/profiles | Confirmed compatibility departure | P3; P2 if FL10 is required | Restore profiles and feature level together |
 | KI-006 | Particle/water cameras | ✅ Fixed port fidelity defect | P3 | Two translations and their explanations |
-| KI-011 | Skin anisotropy | Confirmed port fidelity defect | P3 | Set reference value 16 |
+| KI-011 | Skin anisotropy | ✅ Fixed port fidelity defect | P3 | Set reference value 16 |
 | KI-012 | Partial initialization | Confirmed ownership defects | P3 | Consistent cleanup; no normal-path change |
 | KI-013 | Terrain requested resolution | Confirmed port fidelity defect | P3 | Restore 1024x768 |
 | KI-014 | DDS size arithmetic | Confirmed input-hardening issue | P3 | Bound dimensions and validate wide sizes |
@@ -229,7 +229,11 @@ framing from C++. The difference was not attributed to the compiler update.
 
 ### KI-011 — SkinAndBones effectively disables anisotropic filtering
 
-- [ ] Set the cone material's `MaxAnisotropy` to 16.
+- [x] ✅ Set the cone material's `MaxAnisotropy` to 16.
+
+**Verified fix:** The cone sampler now requests MaxAnisotropy=16. The actual created sampler descriptor was queried and verified; the sample check and visual debug run passed.
+
+Original finding (before the fix):
 
 The [Odin sampler](odin_port/apps/skin_and_bones/main.odin#L354) selects anisotropic
 filtering with maximum 1; the [C++ material](Source/GeometryGeneratorDX11.cpp#L936)
