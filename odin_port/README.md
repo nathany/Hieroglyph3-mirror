@@ -383,3 +383,7 @@ linear-border-black) — this app repurposes Space, so no screenshot key, like
 the C++. Left-drag pans, right-drag/wheel zooms. Rendering is event-driven
 like the C++'s overridden message loop: blocking `GetMessage`, re-render
 only on invalidation — the CPU idles between inputs.
+
+If an image switch cannot create either filter target, the port reports the
+failure and exits cleanly. This improves the C++ helper's unchecked replacement
+path without changing the filtering lesson.

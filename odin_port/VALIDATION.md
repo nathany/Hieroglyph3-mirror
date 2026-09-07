@@ -290,6 +290,10 @@ just check immediate_renderer and just asan immediate_renderer passed. An ASan h
 
 `just check immediate_renderer` and `just asan immediate_renderer` passed. The demo passed eight debugger-backed startup/control/resize captures and a standalone ASan startup/resize/restore run, with normal exits and no diagnostics. An ASan probe using an unchanged copy of mesh.odin and private COM forwarding proxies exercised successful growth and failures in vertex creation, index creation, vertex Map, and index Map; dirty/capacity state, balanced Unmap calls, and cleanup passed, with no D3D warnings/errors. Startup geometry was visually inspected. Evidence: `p3-fixes/KI-009/`, `KI-009-asan/`, `mesh-probe/`, and `mesh-probe-output.txt`.
 
+### KI-010
+
+`just check image_processor` and `just asan image_processor` passed. Fourteen debugger-backed captures covered all five images/algorithms, sampler, pan/zoom and resize; the standalone ASan run covered startup/resize/restore. Both exited normally with no diagnostics, and startup output was visually inspected. Two isolated app copies injected failure after texture/SRV acquisition in the first or second replacement target; both printed the expected error, exited normally and produced no debug-layer or live-object warnings. Evidence: `p3-fixes/KI-010/`, `KI-010-asan/`, and `image-replacement-failure-{3,4}/`.
+
 ## Retained local evidence
 
 Artifacts are outside the repository under:

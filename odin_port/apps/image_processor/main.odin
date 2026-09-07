@@ -21,6 +21,8 @@
 //     invalidated (input, resize, WM_PAINT). The CPU idles otherwise.
 package main
 
+import "core:fmt"
+
 import win32 "core:sys/windows"
 import d3d11 "vendor:directx/d3d11"
 import "glyph:renderer"
@@ -460,8 +462,13 @@ main :: proc() {
 			filter_target_destroy(&intermediate)
 			filter_target_destroy(&output)
 			img := &images[image_index]
-			intermediate, _ = create_filter_target(&r, img.width, img.height)
-			output, _ = create_filter_target(&r, img.width, img.height)
+			// Improve the reference's unchecked replacement path: the existing
+			// defers release partial targets if either creation fails.
+			ok: bool
+			intermediate, ok = create_filter_target(&r, img.width, img.height)
+			if !ok {fmt.eprintln("Failed to replace intermediate filter target"); return}
+			output, ok = create_filter_target(&r, img.width, img.height)
+			if !ok {fmt.eprintln("Failed to replace output filter target"); return}
 		}
 
 		if !state.render_requested {

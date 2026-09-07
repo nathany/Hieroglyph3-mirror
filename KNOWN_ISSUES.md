@@ -46,7 +46,7 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 | KI-017 | Particle debug-count buffer | ✅ Fixed optional-path ownership defect | P3 | Check creation and release the buffer |
 | KI-018 | Actual startup dimensions | Confirmed port fidelity defect | P3 | Use actual client/backbuffer dimensions |
 | KI-009 | Immediate mesh replacement | ✅ Fixed inherited weakness | P3 | Clean failure exit; rollback/retry optional |
-| KI-010 | ImageProcessor replacement | Real inherited weakness | P3 | Clean failure exit or complete temporary target pair |
+| KI-010 | ImageProcessor replacement | ✅ Fixed inherited weakness | P3 | Clean failure exit or complete temporary target pair |
 | KI-007 | Claimed missing mip chain | Disproved as a port regression | None | Mips would be an optional quality enhancement |
 
 Prefer one semantic fix, relevant tests, then one commit. Keep KI-001 isolated,
@@ -428,7 +428,11 @@ and `dirty` must reflect only a complete successful commit.
 
 ### KI-010 — ImageProcessor discards targets before replacement succeeds
 
-- [ ] Optionally handle replacement failure without continuing with invalid targets.
+- [x] ✅ Optionally handle replacement failure without continuing with invalid targets.
+
+**Verified fix:** Image switching checks both replacement results and reports which target failed before exiting through the existing cleanup. No filtering pass can use an incomplete replacement pair; normal image/filter behavior is preserved.
+
+Original finding (before the fix):
 
 Pressing `I` [destroys the pair](odin_port/apps/image_processor/main.odin#L460)
 before creating replacements and ignores success. Partial results remain stored
