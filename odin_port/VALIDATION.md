@@ -266,6 +266,10 @@ From ea0b0a1, ParticleStorm and WaterSimulation camera translations were correct
 
 SkinAndBones just check passed. A hidden probe of actual setup queried ANISOTROPIC/MaxAnisotropy=16 with no setup warnings/errors. The ten-capture debug run exercised animation, replay, movement, oblique right-drag views and resize/restore, with exit 0 and no D3D messages. No mip-chain changes were made. Evidence: p3-fixes/KI-011/ and sampler-probe-output.txt.
 
+### KI-013
+
+just check interlocking_terrain_tiles passed. The 18-capture debug run covered all shading/hull combinations and resize/restore, exit 0 with no D3D messages. The initial 1536x1152 screen-client capture matches the C++ baseline at 150% scaling; gray shading and composition were inspected. This corrects requested size only; actual-size handling remains KI-018. Evidence: p3-fixes/KI-013/.
+
 ## Retained local evidence
 
 Artifacts are outside the repository under:

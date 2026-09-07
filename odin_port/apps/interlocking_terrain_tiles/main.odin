@@ -28,8 +28,8 @@ import "glyph:renderer"
 import "glyph:shader"
 import "glyph:window"
 
-WIDTH :: 640
-HEIGHT :: 480
+WIDTH :: 1024
+HEIGHT :: 768
 TERRAIN_X_LEN :: 32
 TERRAIN_Z_LEN :: 32
 

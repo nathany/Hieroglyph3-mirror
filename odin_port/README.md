@@ -248,8 +248,8 @@ into a 32×32 plane/deviation lookup. Each 16×16 thread group covers one tile.
 The UAV is unbound before the hull shader reads the lookup at t1; other height-map
 sizes are rejected explicitly. Domain-shader cbuffers are bound per
 compiled shading variant: `main` at b0, then `sampleparams` for N·L shading or
-`patch` for LOD debug at b1 (KI-019 fixed). The requested 640×480 size still
-differs from C++'s 1024×768 (KI-013).
+`patch` for LOD debug at b1 (KI-019 fixed). The requested 1024×768 size now
+matches C++ (KI-013 fixed).
 
 ### light_prepass
 

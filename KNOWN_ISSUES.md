@@ -39,7 +39,7 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 | KI-006 | Particle/water cameras | ✅ Fixed port fidelity defect | P3 | Two translations and their explanations |
 | KI-011 | Skin anisotropy | ✅ Fixed port fidelity defect | P3 | Set reference value 16 |
 | KI-012 | Partial initialization | Confirmed ownership defects | P3 | Consistent cleanup; no normal-path change |
-| KI-013 | Terrain requested resolution | Confirmed port fidelity defect | P3 | Restore 1024x768 |
+| KI-013 | Terrain requested resolution | ✅ Fixed port fidelity defect | P3 | Restore 1024x768 |
 | KI-014 | DDS size arithmetic | Confirmed input-hardening issue | P3 | Bound dimensions and validate wide sizes |
 | KI-015 | Temporary allocations | Confirmed Odin lifetime issue | P3 | Scope/reset scratch allocations |
 | KI-016 | MS3D count reads | Confirmed input-hardening issue | P3 | Two explicit bounds checks |
@@ -270,7 +270,11 @@ rather than a new abstraction framework.
 
 ### KI-013 — Terrain starts at the wrong requested resolution
 
-- [ ] Restore the reference's 1024x768 requested client size.
+- [x] ✅ Restore the reference's 1024x768 requested client size.
+
+**Verified fix:** Terrain now requests 1024x768, matching C++. Startup captured 1536x1152 physical pixels at 150% desktop scaling. The sample check and all shading/hull modes passed.
+
+Original finding (before the fix):
 
 The [port](odin_port/apps/interlocking_terrain_tiles/main.odin#L31) requests 640x480;
 [C++](Applications/InterlockingTerrainTiles/App.cpp#L52) requests 1024x768. Both
