@@ -575,6 +575,10 @@ main :: proc() {
 			ctx->CSSetConstantBuffers(0, 2, &cs_cbuffers[0])
 			ctx->CSSetUnorderedAccessViews(0, 2, &init_uavs[0], &init_counts[0])
 			ctx->Dispatch(1, 1, 1)
+			// End this pass before insertion reuses current at u0. Unbinding
+			// preserves the freshly initialized append counters.
+			null_uavs := [2]^d3d11.IUnorderedAccessView{}
+			ctx->CSSetUnorderedAccessViews(0, 2, &null_uavs[0], nil)
 		}
 
 		// --- insert pass ---------------------------------------------------

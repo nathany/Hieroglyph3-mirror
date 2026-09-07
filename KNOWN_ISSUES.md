@@ -31,7 +31,7 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 | KI-001 | DXGI factory relationship | ✅ Fixed port defect (2026-09-06) | P1 | Small ownership correction; restores reference |
 | KI-002 | Terrain complex LOD | ✅ Fixed port omission | P2 | Moderate compute-prepass addition; restores lesson |
 | KI-019 | Terrain shaded-mode cbuffer slot | ✅ Fixed port binding defect | P2 | Small per-variant binding correction; restores reference |
-| KI-020 | Particle startup UAV hazard | Confirmed port binding-cleanup omission | P3 | Unbind priming UAVs; preserve append counters |
+| KI-020 | Particle startup UAV hazard | ✅ Fixed port binding-cleanup omission | P3 | Unbind priming UAVs; preserve append counters |
 | KI-003 | Skin camera and resize | ✅ Fixed port omission | P2 | Moderate local input/resize addition |
 | KI-004 | Cone apex normals | ✅ Fixed semantic translation defect | P2 | `normalize0`; preserves reference zero input |
 | KI-008 | Failed swap-chain resize | ✅ Fixed port failure-path defect | P2 | Return failure and stop cleanly; recovery optional |
@@ -370,7 +370,11 @@ No constrained-desktop runtime reproduction was performed during this audit.
 
 ### KI-020 — ParticleStorm leaves priming UAVs bound for the first insertion
 
-- [ ] Explicitly unbind the priming UAVs before the next pass.
+- [x] ✅ Explicitly unbind the priming UAVs before the next pass.
+
+**Verified fix:** Both priming UAV slots are explicitly unbound after dispatch. The normal run is debug-clean; DEBUG_COUNTS has no UAV hazard and live counts grow, but still reports the KI-017 live-object leak.
+
+Original finding (before the fix):
 
 The first-frame [priming dispatch](odin_port/apps/particle_storm/main.odin#L577)
 leaves `next` at `u0` and `current` at `u1`. When the first insertion runs that

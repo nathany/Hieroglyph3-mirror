@@ -351,8 +351,8 @@ the buffer lands on **t1**. The C++'s `bDebugActive` counter-readback path
 is mirrored behind `-define:DEBUG_COUNTS=true`. FPS in the title bar;
 the camera starts at C++'s final translation (-100, 60.5, -100), without adding
 the default node offset (KI-006 fixed).
-The first insertion can also produce a startup UAV binding-hazard warning because
-the priming pass leaves a slot bound (KI-020); the runtime currently clears it.
+The priming pass explicitly unbinds both UAV slots before insertion reuses one,
+preserving the append counters without a startup binding hazard (KI-020 fixed).
 
 ### immediate_renderer
 

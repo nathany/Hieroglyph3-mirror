@@ -270,6 +270,10 @@ SkinAndBones just check passed. A hidden probe of actual setup queried ANISOTROP
 
 just check interlocking_terrain_tiles passed. The 18-capture debug run covered all shading/hull combinations and resize/restore, exit 0 with no D3D messages. The initial 1536x1152 screen-client capture matches the C++ baseline at 150% scaling; gray shading and composition were inspected. This corrects requested size only; actual-size handling remains KI-018. Evidence: p3-fixes/KI-013/.
 
+### KI-020
+
+just check particle_storm passed. Normal and DEBUG_COUNTS=true builds each ran startup, animation, movement and resize/restore (five captures, exit 0). The normal build had no D3D messages; the counter build had no UAV hazard but reported the known KI-017 live-object leak at shutdown. Counter output showed current=0 and positive, increasing next counts, confirming unbinding preserved append counters. Particle rendering was inspected. Optional staging-buffer ownership remains KI-017 at this checkpoint. Evidence: p3-fixes/KI-020/ and KI-020-counts/.
+
 ## Retained local evidence
 
 Artifacts are outside the repository under:
