@@ -817,7 +817,7 @@ main :: proc() {
 	window.initialize(&win, &handler)
 	defer window.shutdown(&win)
 
-	r, renderer_ok := renderer.create(win.hwnd, WIDTH, HEIGHT, ._11_0)
+	r, renderer_ok := renderer.create(win.hwnd, u32(win.width), u32(win.height), ._11_0)
 	if !renderer_ok {
 		win32.ShowWindow(win.hwnd, win32.SW_HIDE)
 		win32.MessageBoxW(
@@ -831,7 +831,7 @@ main :: proc() {
 	defer renderer.destroy(&r)
 
 	scene, scene_ok := setup(&r)
-	targets, targets_ok := targets_create(r.device, WIDTH, HEIGHT)
+	targets, targets_ok := targets_create(r.device, r.width, r.height)
 	if !scene_ok || !targets_ok {
 		win32.MessageBoxW(
 			nil,

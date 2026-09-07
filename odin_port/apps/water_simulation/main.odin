@@ -453,7 +453,7 @@ main :: proc() {
 	window.initialize(&win, &handler)
 	defer window.shutdown(&win)
 
-	r, renderer_ok := renderer.create(win.hwnd, WIDTH, HEIGHT, ._10_0)
+	r, renderer_ok := renderer.create(win.hwnd, u32(win.width), u32(win.height), ._10_0)
 	if !renderer_ok {
 		win32.ShowWindow(win.hwnd, win32.SW_HIDE)
 		win32.MessageBoxW(
@@ -475,7 +475,7 @@ main :: proc() {
 	}
 
 	scene, scene_ok := setup(&r)
-	depth, depth_ok := depth_create(r.device, WIDTH, HEIGHT)
+	depth, depth_ok := depth_create(r.device, r.width, r.height)
 	if !scene_ok || !depth_ok {
 		win32.MessageBoxW(
 			nil,

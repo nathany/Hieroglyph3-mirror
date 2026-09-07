@@ -231,7 +231,7 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	// XMMatrixPerspectiveFovLH with the same arguments, via glyph:d3d_math's
 	// LH 0..1-depth helpers.
 	s.view = dm.look_at_lh({0.0, 1.0, -5.0}, {0.0, 1.0, 0.0}, {0.0, 1.0, 0.0})
-	s.proj = dm.perspective_fov_lh(linalg.PI / 2.0, f32(WIDTH) / f32(HEIGHT), 0.01, 100.0)
+	s.proj = dm.perspective_fov_lh(linalg.PI / 2.0, f32(r.width) / f32(r.height), 0.01, 100.0)
 
 	return s, true
 }
@@ -252,7 +252,7 @@ main :: proc() {
 	window.initialize(&win, &handler)
 	defer window.shutdown(&win)
 
-	r, renderer_ok := renderer.create(win.hwnd, WIDTH, HEIGHT, ._10_0)
+	r, renderer_ok := renderer.create(win.hwnd, u32(win.width), u32(win.height), ._10_0)
 	if !renderer_ok {
 		win32.ShowWindow(win.hwnd, win32.SW_HIDE)
 		win32.MessageBoxW(

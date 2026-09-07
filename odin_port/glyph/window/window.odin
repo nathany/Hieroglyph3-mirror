@@ -127,9 +127,10 @@ initialize :: proc(w: ^Render_Window, handler: ^Handler) {
 	// Record the client area actually created (desktop limits can make it
 	// smaller than requested).
 	rect: win32.RECT
-	win32.GetClientRect(w.hwnd, &rect)
+	assert(win32.GetClientRect(w.hwnd, &rect) != false, "GetClientRect failed")
 	w.width = rect.right - rect.left
 	w.height = rect.bottom - rect.top
+	assert(w.width > 0 && w.height > 0, "Window has no drawable client area")
 
 	// Store the message-handler pointer in the extra bytes, then show.
 	win32.SetWindowLongPtrW(w.hwnd, 0, win32.LONG_PTR(uintptr(handler)))

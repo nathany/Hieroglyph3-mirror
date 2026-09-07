@@ -256,7 +256,7 @@ main :: proc() {
 	window.initialize(&win, &handler)
 	defer window.shutdown(&win)
 
-	r, renderer_ok := renderer.create(win.hwnd, WIDTH, HEIGHT, ._11_0)
+	r, renderer_ok := renderer.create(win.hwnd, u32(win.width), u32(win.height), ._11_0)
 	if !renderer_ok {
 		win32.ShowWindow(win.hwnd, win32.SW_HIDE)
 		win32.MessageBoxW(
@@ -326,7 +326,7 @@ main :: proc() {
 		look_at := [3]f32{0, 0, 0}
 
 		view := dm.look_at_lh(look_from, look_at, {0, 1, 0})
-		proj := dm.perspective_fov_lh(math.PI / 3.0, f32(WIDTH) / f32(HEIGHT), 1.0, 25.0)
+		proj := dm.perspective_fov_lh(math.PI / 3.0, f32(r.width) / f32(r.height), 1.0, 25.0)
 
 		// inv_tpose_world is identity here and the VS ignores it anyway (the
 		// mInvTposeWorld line is commented out in the HLSL) — preserved.

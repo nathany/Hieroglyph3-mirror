@@ -44,7 +44,7 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 | KI-015 | Temporary allocations | ✅ Fixed Odin lifetime issue | P3 | Scope/reset scratch allocations |
 | KI-016 | MS3D count reads | ✅ Fixed input-hardening issue | P3 | Two explicit bounds checks |
 | KI-017 | Particle debug-count buffer | ✅ Fixed optional-path ownership defect | P3 | Check creation and release the buffer |
-| KI-018 | Actual startup dimensions | Confirmed port fidelity defect | P3 | Use actual client/backbuffer dimensions |
+| KI-018 | Actual startup dimensions | ✅ Fixed port fidelity defect | P3 | Use actual client/backbuffer dimensions |
 | KI-009 | Immediate mesh replacement | ✅ Fixed inherited weakness | P3 | Clean failure exit; rollback/retry optional |
 | KI-010 | ImageProcessor replacement | ✅ Fixed inherited weakness | P3 | Clean failure exit or complete temporary target pair |
 | KI-007 | Claimed missing mip chain | Disproved as a port regression | None | Mips would be an optional quality enhancement |
@@ -366,7 +366,11 @@ the defect is ownership and failure handling, not that destination usage. See
 
 ### KI-018 — Rendering samples ignore actual startup dimensions
 
-- [ ] Initialize backbuffers and dependent targets from the actual created size.
+- [x] ✅ Initialize backbuffers and dependent targets from the actual created size.
+
+**Verified fix:** All 14 renderers use validated actual client dimensions. Light/Deferred targets and Water/Particle depth follow renderer dimensions; RotatingCube, CurvedPN and Terrain use the actual projection aspect as their C++ counterparts do. Fixed/requested aspects elsewhere, fixed compute output and image-sized filters are preserved. README documents the limited shared depth/viewport and ImageProcessor uniform improvements over C++.
+
+Original finding (before the fix):
 
 All 14 rendering applications pass `WIDTH, HEIGHT` to `renderer.create`, although
 [window initialization](odin_port/glyph/window/window.odin#L130) records actual

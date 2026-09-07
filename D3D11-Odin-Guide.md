@@ -220,6 +220,10 @@ take that route.
    The port's `renderer.resize` returns a `bool`; callers use
    `if !renderer.resize(...) {return}` so existing `defer` cleanup runs before
    any draw can use incomplete targets (KI-008 fixed).
+   After creating a window, use its `GetClientRect` dimensions for the swap chain
+   and dependent render targets. Keep the requested size for window creation;
+   Windows may give you a smaller client area. Projection choices are separate:
+   some book samples intentionally retain a fixed or requested startup aspect.
 
 4. **Flags are bit_sets, not OR'd ints.** The vendor bindings turn C flag soup into
    Odin bit_sets and enums: `BindFlags = {.VERTEX_BUFFER}`, `Usage = .DYNAMIC`,

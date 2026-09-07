@@ -178,7 +178,7 @@ main :: proc() {
 	window.initialize(&win, &handler)
 	defer window.shutdown(&win)
 
-	r, renderer_ok := renderer.create(win.hwnd, WIDTH, HEIGHT, ._11_0)
+	r, renderer_ok := renderer.create(win.hwnd, u32(win.width), u32(win.height), ._11_0)
 	if !renderer_ok {
 		win32.ShowWindow(win.hwnd, win32.SW_HIDE)
 		win32.MessageBoxW(

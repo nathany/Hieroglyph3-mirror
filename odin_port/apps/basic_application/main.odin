@@ -74,7 +74,7 @@ main :: proc() {
 	window.initialize(&win, &handler)
 	defer window.shutdown(&win)
 
-	r, renderer_ok := renderer.create(win.hwnd, WIDTH, HEIGHT, ._10_0)
+	r, renderer_ok := renderer.create(win.hwnd, u32(win.width), u32(win.height), ._10_0)
 	if !renderer_ok {
 		// Mirrors the C++ failure path: hide the window, tell the user, abort.
 		win32.ShowWindow(win.hwnd, win32.SW_HIDE)

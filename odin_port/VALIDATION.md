@@ -302,6 +302,10 @@ just check immediate_renderer and just asan immediate_renderer passed. An ASan h
 
 `just verify` passed all 15 checks and eight tracked math tests. All ten changed demos passed debugger-backed startup runs with no diagnostics; CurvedPN and TessellationParams startup visuals were inspected. `just asan tessellation_params` and `just asan curved_pn_triangles` builds and standalone resize/restore runs passed. Isolated ASan copies wrapped the actual temp allocator with tracking and forced repeated screenshots (three frames per screenshot-capable demo, 32 screenshot/title-update frames for TessellationParams); ImageProcessor exercised three message iterations. Every subsequent iteration observed zero outstanding scratch bytes. A separate ASan/heap-tracking PLY probe loaded CPNTest three times: only its two mesh arrays remained after each load, and destruction left zero tracked heap bytes. Evidence: `p3-fixes/KI-015/`, `KI-015-asan/`, `scratch-probes/`, `ply-scratch-probe/`, and `ply-scratch-output.txt`.
 
+### KI-018
+
+`just verify` passed all 15 strict checks and eight tracked math tests. All 14 rendering demos passed normal debugger-backed startup runs. A separate copied glyph/window collection constrained only creation to 480x270 while leaving sample WIDTH/HEIGHT constants intact; all 14 passed assertions on actual client, backbuffer, depth and viewport sizes and rendered normally. Extra assertions covered LightPrepass targets, all Deferred targets including 960x540 SSAA, Water/Particle depth and image-sized filter targets. This is a controlled constrained-creation simulation, not a natural desktop-limit reproduction. Physical captures were 720x405 at 150% scaling. The three changed-aspect startup views were inspected. Both sets exited normally; only LightPrepass's retained mask warning appeared. Evidence: `p3-fixes/KI-018/`, `constrained-probes/`, `KI-018-constrained-build/`, and `KI-018-constrained/`.
+
 ## Retained local evidence
 
 Artifacts are outside the repository under:

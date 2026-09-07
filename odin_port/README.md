@@ -115,6 +115,20 @@ Where a demo shows live state (tessellation factors, active modes), it goes in t
 | `water_simulation` | Applications/WaterSimulationI | 12 | camera | ✅ FL10/SM4 simulation and reference camera |
 | `particle_storm` | Applications/ParticleStorm | 12 | camera | Simulation runs; startup camera differs |
 
+Rendering samples request the sizes listed below, then use the actual created
+client size for the swap chain, shared depth/viewport, and dependent window-sized
+targets. BasicComputeShader's compute output stays 640×480; ImageProcessor's
+filter targets stay image-sized. RotatingCube, CurvedPointNormalTriangles, and
+Terrain also derive their projection aspect from the actual size, matching C++.
+Other startup camera aspects retain the reference's requested or fixed values.
+
+The shared depth/viewport choice intentionally improves seven standalone C++
+samples: BasicApplication, RotatingCube, BasicComputeShader, BasicTessellation,
+TessellationParams, CurvedPointNormalTriangles, and Terrain use actual swap-chain
+dimensions but requested depth/viewport dimensions. The Odin
+port keeps those resources consistent. ImageProcessor's viewer uniform also uses
+the actual size immediately; its C++ version starts with the requested size.
+
 ### basic_window
 
 Pure Win32, no Direct3D. Two windows: the main 320×240 window at (200, 100)
