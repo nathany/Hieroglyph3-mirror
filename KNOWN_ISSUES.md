@@ -36,7 +36,7 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 | KI-004 | Cone apex normals | ✅ Fixed semantic translation defect | P2 | `normalize0`; preserves reference zero input |
 | KI-008 | Failed swap-chain resize | ✅ Fixed port failure-path defect | P2 | Return failure and stop cleanly; recovery optional |
 | KI-005 | Water feature level/profiles | Confirmed compatibility departure | P3; P2 if FL10 is required | Restore profiles and feature level together |
-| KI-006 | Particle/water cameras | Confirmed port fidelity defect | P3 | Two translations and their explanations |
+| KI-006 | Particle/water cameras | ✅ Fixed port fidelity defect | P3 | Two translations and their explanations |
 | KI-011 | Skin anisotropy | Confirmed port fidelity defect | P3 | Set reference value 16 |
 | KI-012 | Partial initialization | Confirmed ownership defects | P3 | Consistent cleanup; no normal-path change |
 | KI-013 | Terrain requested resolution | Confirmed port fidelity defect | P3 | Restore 1024x768 |
@@ -209,7 +209,11 @@ every device.
 
 ### KI-006 — ParticleStorm and WaterSimulation start from the wrong cameras
 
-- [ ] Use final reference translations without adding the default node offset.
+- [x] ✅ Use final reference translations without adding the default node offset.
+
+**Verified fix:** Both simulations now use the C++ spatial controller's final translation. Startup framing and movement were visually checked; both sample checks and debug runs passed.
+
+Original finding (before the fix):
 
 The [particle](odin_port/apps/particle_storm/main.odin#L483) and
 [water](odin_port/apps/water_simulation/main.odin#L488) ports add `(0, 10, -20)`.

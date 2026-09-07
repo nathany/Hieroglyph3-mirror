@@ -19,10 +19,9 @@
 // grid cell (32, 96), which ripples outward and reflects off the edges.
 //
 // The plane's node spins about Y at 0.2 rad/s with the body offset
-// (-128, 0, -128) centering the grid on the origin. The C++ reuses
-// RenderApplication's default camera, whose *node* sits at (0, 10, -20)
-// while the app positions the body at (-100, 30.5, -100) — so the effective
-// first-person camera start is the sum, (-100, 40.5, -120), rotation
+// (-128, 0, -128) centering the grid on the origin. The C++ spatial
+// controller replaces the default node translation: the camera starts at
+// (-100, 30.5, -100), rotation
 // (0.307, 0.707). Right-drag look, W/S/A/D/Q/E move, Ctrl sprint, Esc quits,
 // Space screenshots, resize supported.
 //
@@ -483,9 +482,9 @@ main :: proc() {
 	defer scene_destroy(&scene)
 	defer depth_destroy(&depth)
 
-	// The default camera node (0, 10, -20) plus the app's body transform.
+	// SpatialController replaces the default node translation with this pose.
 	cam := Fp_Camera {
-		position = {-100, 40.5, -120},
+		position = {-100, 30.5, -100},
 		pitch    = 0.307,
 		yaw      = 0.707,
 	}

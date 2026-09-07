@@ -322,9 +322,9 @@ initial state is a sinc-shaped splash (amplitude 40) centered at grid
 time step is elapsed-time driven (doubled by the app, clamped to 0.05) but
 the damping factor 0.9995 applies **per iteration**, so at uncapped
 thousands of FPS the waves flatten within a couple of seconds — the C++
-behaves the same way, just at its own frame rate. The current camera starts at
-(-100, 40.5, -120), but C++'s final translation is (-100, 30.5, -100): its spatial
-controller replaces the default node translation rather than adding it (KI-006).
+behaves the same way, just at its own frame rate. The camera starts at
+(-100, 30.5, -100), matching C++: its spatial controller replaces the default
+node translation rather than adding it (KI-006 fixed).
 The port also requests FL11/SM5 rather than the reference's FL10/SM4 (KI-005).
 The C++'s unused "FinalColor" parameter is omitted.
 
@@ -349,8 +349,8 @@ VS's `SimulationState` buffer has no explicit register, but FXC still
 honors the (unused-in-VS) `ParticleTexture : register(t0)` reservation, so
 the buffer lands on **t1**. The C++'s `bDebugActive` counter-readback path
 is mirrored behind `-define:DEBUG_COUNTS=true`. FPS in the title bar;
-the current camera start (-100, 70.5, -120) incorrectly adds the default node
-offset. C++'s final translation is (-100, 60.5, -100); see KI-006.
+the camera starts at C++'s final translation (-100, 60.5, -100), without adding
+the default node offset (KI-006 fixed).
 The first insertion can also produce a startup UAV binding-hazard warning because
 the priming pass leaves a slot bound (KI-020); the runtime currently clears it.
 

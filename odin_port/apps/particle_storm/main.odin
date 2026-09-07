@@ -29,9 +29,8 @@
 // The first frame primes both UAV hidden counters to zero via a 1-group
 // update dispatch (the C++'s bOneTimeInit path).
 //
-// The C++ reuses RenderApplication's default camera (node at (0, 10, -20))
-// and positions the body at (-100, 60.5, -100) — so the effective
-// first-person camera start is (-100, 70.5, -120), rotation (0.307, 0.707).
+// The C++ spatial controller sets the camera to (-100, 60.5, -100),
+// replacing the default node translation; rotation is (0.307, 0.707).
 // Right-drag look, W/S/A/D/Q/E move, Ctrl sprint, Esc quits, Space
 // screenshots, resize supported.
 package main
@@ -478,9 +477,9 @@ main :: proc() {
 	defer scene_destroy(&scene)
 	defer depth_destroy(&depth)
 
-	// The default camera node (0, 10, -20) plus the app's body transform.
+	// SpatialController replaces the default node translation with this pose.
 	cam := Fp_Camera {
-		position = {-100, 70.5, -120},
+		position = {-100, 60.5, -100},
 		pitch    = 0.307,
 		yaw      = 0.707,
 	}

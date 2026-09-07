@@ -253,6 +253,15 @@ marked fixed. `git diff --check` passed. `p2-fixes/summary.json` records hashes,
 diagnostics, and 106 screen-client captures across the ten debug demo runs in
 this sequence. The failure and ASan probes are additional, separately recorded runs.
 
+## P3 follow-up validation
+
+Each issue below was committed after its recorded checks. Artifacts are under
+`p3-fixes/` beside the earlier `p2-fixes/` directory.
+
+### KI-006
+
+From ea0b0a1, ParticleStorm and WaterSimulation camera translations were corrected to (-100,60.5,-100) and (-100,30.5,-100). Both just check recipes passed. Both debug runs exercised movement, resize and restore (five captures each, exit 0). Startup rendering was inspected. Water had no D3D messages; ParticleStorm retained only the known KI-020 UAV hazard. Evidence: p3-fixes/KI-006/.
+
 ## Retained local evidence
 
 Artifacts are outside the repository under:
