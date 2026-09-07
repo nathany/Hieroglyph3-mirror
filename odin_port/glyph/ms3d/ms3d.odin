@@ -4,6 +4,8 @@
 // interleaved POSITION/TEXCOORD/NORMAL, exactly the element order the engine
 // adds them in — negating Z (the format is right-handed) and flipping the
 // winding (indices i, i+2, i+1).
+// Unlike the reference's unchecked binary reads, reject truncated sections and
+// invalid indices before accessing them. This stays a small sample-asset reader.
 package ms3d
 
 import "core:fmt"

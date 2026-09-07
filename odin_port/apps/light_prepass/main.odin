@@ -515,6 +515,8 @@ write_cbuffer :: proc(ctx: ^d3d11.IDeviceContext, buffer: ^d3d11.IBuffer, value:
 }
 
 setup :: proc(r: ^renderer.Renderer) -> (result: Scene, ok: bool) {
+	// Return values are copied before defers: build locally so a failed return
+	// stays empty while deferred cleanup releases partial resources.
 	s: Scene
 	defer if !ok {scene_destroy(&s)}
 	device := r.device
@@ -848,6 +850,8 @@ main :: proc() {
 	}
 
 	// FirstPersonCamera at rotation (0.407, -0.707, 0), position (4, 4.5, -4).
+	// This C++ setup override omits camera event registration, leaving its
+	// viewpoint fixed. Odin intentionally enables input for scene exploration.
 	cam := Fp_Camera {
 		position = {4, 4.5, -4},
 		pitch    = 0.407,

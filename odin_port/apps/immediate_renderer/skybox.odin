@@ -7,8 +7,8 @@
 // cube map, hand-parsed here (the C++ goes through DirectXTK's
 // DDSTextureLoader; the format is simple enough that a dependency isn't
 // warranted: 128-byte header, then 6 faces of width*height*4 bytes in
-// +X, -X, +Y, -Y, +Z, -Z order). core:image has no DDS support, so this
-// stays hand-rolled even under the "prefer core:image" policy.
+// +X, -X, +Y, -Y, +Z, -Z order). The reader validates that limited layout
+// and its payload; supporting other DDS formats is a separate extension.
 package main
 
 import "core:fmt"

@@ -161,14 +161,10 @@ bones_update :: proc(bones: []Bone, parent_world: dm.Matrix4f32, dt: f32) {
 // its bind configuration (the C++ does this before the app moves the actor
 // nodes, so the parent here is identity).
 //
-// That identity parent is load-bearing, not incidental. Because inv_bind is
-// captured with no node transform baked in, while the per-frame `world`
-// below IS built under the actor's node transform, the product world *
-// inv_bind carries the actor's translation and spin along with the bone's
-// own motion. The node transform therefore rides *inside* the skin matrices,
-// which is exactly why the shaders can ignore WorldMatrix. Capturing the
-// bind pose after positioning the actor would cancel that out and leave all
-// three actors stacked at the origin.
+// The inverse bind has no actor-node transform, while the animated world matrix
+// includes it. Thus inv_bind * world carries the actor's placement and the bone's
+// motion, letting these shaders ignore WorldMatrix. Capturing the bind pose after
+// positioning the actor would cancel that placement at the bind pose.
 //
 // dt is 0 so every stream reports its first keyframe; this stands in for the
 // C++ controller's "skip the first update to allow the bind pose to be read".
@@ -182,15 +178,15 @@ bones_set_bind_pose :: proc(bones: []Bone) {
 // SkinnedBoneController::GetTransform / GetNormalTransform verbatim:
 // skin = m_InvBindPose * WorldMatrix; normal matrix = transpose(inverse(skin)).
 //
-// Read left to right: inv_bind lifts a vertex out of the bone's bind-pose
-// frame into bone-local space, then world puts it back down wherever the
+// Read left to right: inv_bind takes a vertex from bind-pose mesh space
+// into bone-local space, then world puts it back down wherever the
 // bone has animated to. A bone that has not moved yields world == bind, so
 // skin collapses to identity and its vertices sit still — the property the
 // whole scheme rests on.
 //
-// The separate normal matrix is the inverse-transpose, needed because the
-// skin matrices are not pure rotations: they translate, and a chain of them
-// can shear, which would tilt normals the wrong way under a plain rotate.
+// Preserve C++'s inverse-transpose normal transform. Each bone here is rigid;
+// composing rigid transforms cannot shear, though blending bones can deform
+// the mesh non-rigidly.
 bone_skin_matrix :: proc(b: ^Bone) -> dm.Matrix4f32 {
 	return b.inv_bind * b.world
 }

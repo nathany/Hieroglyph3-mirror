@@ -6,19 +6,17 @@ against raw D3D11, instead of porting the Hieroglyph3 engine. The engine source 
 repo is your reference implementation — read it when the book's prose isn't enough, but
 don't transliterate it.
 
-**Suggested route:** Chapters 1–6 are the core path. If you plan to move on to
-Luna's DX12 book, you can read chapter 4 here and implement tessellation there;
-chapters 10–12 are useful continuations. If this is your primary rendering book,
-implementing tessellation and skinning here is equally reasonable. The later
-chapter notes explain the choices rather than prescribing a single curriculum.
+**Suggested route:** Chapters 1–6 introduce the core pipeline. Continue with
+skinning, adaptive tessellation, image processing, deferred rendering, or simulation
+according to what you want to implement. If moving on to DX12, the shader and
+rendering concepts remain useful; its resource and submission model is a separate lesson.
 
-**Reference implementations:** `odin_port/` contains reference ports of the samples
-below, MirrorMirror excepted. The demos have been tested, but have documented
-limitations: consult [KNOWN_ISSUES.md](KNOWN_ISSUES.md) alongside the per-app notes
-and controls in [odin_port/README.md](odin_port/README.md). Where older comments or
-status notes conflict with the audited issue record, use that record and the C++
-implementation to understand the difference. The suggested route concerns what
-you write yourself; the other ports remain available to study.
+**Reference implementations:** `odin_port/` contains the sample ports listed
+below, MirrorMirror excepted. Read the controls, accepted differences, and inherited
+limitations in [odin_port/README.md](odin_port/README.md) alongside the code.
+[VALIDATION.md](odin_port/VALIDATION.md) records test evidence and its limits.
+The suggested exercises concern what you write yourself; all ports remain available
+to study.
 
 ---
 
@@ -53,7 +51,8 @@ optional feature for that layer; it does not ship as part of Odin. See
 [Microsoft's software-layer documentation](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-layers).
 The repository's recipes use Git Bash and `just`;
 see [Build & run](odin_port/README.md#build--run). Package details below describe
-the local toolchain; check your compiler version if an API differs.
+Odin `dev-2026-09-nightly:a2fb372` on Windows x64; check your compiler version
+if an API differs.
 
 | Piece | Package | Notes |
 |---|---|---|
@@ -64,7 +63,7 @@ the local toolchain; check your compiler version if an API differs.
 | Math | built-in `matrix[4,4]f32` + `core:math/linalg` | See the matrix section below — this is the one area needing real care. The book's row-vector builders it doesn't cover live in `glyph:d3d_math`. |
 | Image loading (ch. 5+) | `core:image/png` | Pure-Odin PNG decoder for the PNG assets used here. Read metadata to match the reference loader's sRGB choice (gotcha #13). DDS needs a separate loader. |
 | Cube map loading (ch. 3) | Sample-specific DDS reader | `TropicalSunnyDay.dds` is legacy uncompressed 32-bit BGRA, 512×512, with six faces and no mip chain. See `odin_port/apps/immediate_renderer/skybox.odin`. This is a reader for that asset's layout, not a general DDS decoder; validate dimensions and payload length before creating the cube texture. |
-| Image saving (screenshots) | `vendor:stb/image` | `core:image/png` is **decode-only** (verified on `dev-2026-07`), so `write_png` handles the `Space`-key screenshots. The prebuilt `stb_image_write.lib` ships in the toolchain's `vendor/stb/lib`, so this C dependency costs no build step. |
+| Image saving (screenshots) | `vendor:stb/image` | `core:image/png` is **decode-only**, so `write_png` handles the `Space`-key screenshots. The prebuilt `stb_image_write.lib` ships in the toolchain's `vendor/stb/lib`, so this C dependency costs no build step. |
 | Timing | `core:time` | `tick_now()`/`tick_diff()` replace the engine's QPC `Timer` class |
 | File I/O | `core:os` | `read_entire_file` for shader source and model files — it takes an allocator (required, not defaulted) and returns `([]byte, Error)` |
 | Callback context | `base:runtime` | `proc "system"` callbacks (the wndproc) start with no Odin context; set `context = runtime.default_context()` before calling anything that allocates. Note `base:`, not `core:`. |
@@ -78,16 +77,10 @@ pipeline, and it comfortably holds even TessellationParams' full state. Document
 keybinds in a README rather than drawing them. If you do want real text later,
 `vendor:stb` has two good options — see Appendix B.
 
-**Rosetta stone:** the official Odin examples repo contains
-[`directx/d3d11_minimal_sdl2/d3d11_in_odin.odin`](https://github.com/odin-lang/examples/blob/master/directx/d3d11_minimal_sdl2/d3d11_in_odin.odin)
-— a complete textured spinning cube (device, swap chain, depth buffer,
-states, constant buffer, texture, draw loop). That's roughly the endpoint of chapters
-1–3 in one file. Keep it open in a tab; it demonstrates every idiom this guide
-mentions. (It uses SDL2 for the window; you'll use raw Win32 — see chapter 1.)
-
-**Windowing choice:** the official example uses `vendor:sdl2` and extracts the HWND.
-For this book, use raw Win32 via `core:sys/windows` instead — chapter 1 is literally
-about the Win32/DXGI plumbing, and it's ~80 lines. SDL2/SDL3 remain an escape hatch if window management ever becomes friction.
+**Another Odin reference:** the official examples repository includes
+[`d3d11_minimal_sdl2`](https://github.com/odin-lang/examples/tree/master/directx/d3d11_minimal_sdl2).
+It uses SDL2 for windowing. These ports use `core:sys/windows` so you can follow
+the book's Win32/DXGI setup directly; the shared `glyph:window` package shows that code.
 
 ---
 
@@ -98,7 +91,7 @@ Quick reference — matching conventions let you upload the matrices without a t
 |  | CPU (DirectXMath → your Odin) | GPU (HLSL in this book) |
 |---|---|---|
 | **Vector convention** | Row-vector mathematics: `v * M`, chains left-to-right (`World * View * Proj`), translation in the bottom row. `Matrix4f` computes this convention despite its surprising `M * v` operator spelling; Odin uses `glyph:d3d_math` builders and `v * m`. | Row-vector, written explicitly in these shaders as `mul(v, M)`. This is an expression in the shader, not a compiler setting. |
-| **Matrix storage** | Row-major. `Matrix4f` stores rows contiguously; Odin's `#row_major matrix[4,4]f32` does the same (plain `matrix[4,4]f32` would be column-major). | Row-major, but *not* declared in the HLSL — no shader in the book uses the `row_major` keyword. HLSL's default is column-major; the engine flips it globally with the FXC flag `D3DCOMPILE_PACK_MATRIX_ROW_MAJOR` (`ShaderFactoryDX11.cpp`, and `glyph:shader` here). |
+| **Matrix storage** | Row-major. `Matrix4f` stores rows contiguously; Odin's `#row_major matrix[4,4]f32` does the same (plain `matrix[4,4]f32` would be column-major). | Row-major through the compiler packing flag used for the reused sample shaders. HLSL's default is column-major; the engine flips it globally with the FXC flag `D3DCOMPILE_PACK_MATRIX_ROW_MAJOR` (`ShaderFactoryDX11.cpp`, and `glyph:shader` here). |
 
 The two rows are independent knobs. **Vector convention** decides the math you write;
 **storage** decides how those 16 floats are read back out of the cbuffer. Storage
@@ -128,20 +121,10 @@ world := dm.matrix4_rotate_f32(angle, {0, 1, 0}) * dm.matrix4_translate_f32(pos)
 constants.world_view_proj = world * view * proj   // the book's order, uploaded as-is
 ```
 
-Three pieces have to agree, and they do:
-
-1. **Builders** come from `d3d_math`, so matrices are laid out as the book prints
-   them — translation in the bottom row.
-2. **Storage** is `#row_major`, matching the **packing** the shaders are compiled
-   with. This is an FXC flag, not an Odin one: `D3DCOMPILE_PACK_MATRIX_ROW_MAJOR`,
-   passed by `ShaderFactoryDX11` in the engine and by `glyph:shader` here. It decides
-   whether HLSL reads a cbuffer's 16 floats as the matrix's rows or its columns —
-   visible in the generated code, where `mul(v, M)` becomes a `mul`/`mad` chain over
-   rows with the flag, and four `dp4`s against columns without it. The general rule:
-   the shader sees your matrix *transposed* exactly when field storage differs from
-   the packing mode. Match them, as here, and it sees precisely what you built —
-   **no transposes anywhere**. Drop the flag and every matrix arrives transposed.
-3. **Composition** runs left-to-right, `world * view * proj`, exactly as the C++ does.
+The builders establish row-vector math, `#row_major` establishes CPU storage,
+and `D3DCOMPILE_PACK_MATRIX_ROW_MAJOR` establishes matching HLSL cbuffer storage.
+Together these avoid an extra transpose when uploading matrices. Mathematical
+transposes, such as the inverse-transpose normal transform, still have their usual role.
 
 Everything then reads like the book: composition order, the printed matrix layouts,
 `pos * world` ↔ the shader's `mul(pos, WorldMatrix)`, and even literal indexing —
@@ -167,14 +150,14 @@ their `transmute` preserves bytes while an ordinary conversion preserves element
 | affine point transform | `([4]f32{p.x, p.y, p.z, 1} * m).xyz` |
 | projective point transform (`XMVector3TransformCoord`) | Compute `q := [4]f32{p.x, p.y, p.z, 1} * m`, then `q.xyz / q.w`; a finite result requires nonzero `q.w`. |
 | `Vector3f` Normalize / Cross / Dot | `linalg.normalize0` / `linalg.cross` / `linalg.dot`; `normalize0` preserves the C++ helper's zero-input behavior. |
-| cbuffer matrix field | `dm.Matrix4f32` — pairs with the FXC packing flag (point 2) |
+| cbuffer matrix field | `dm.Matrix4f32` — pairs with the FXC packing flag |
 | element access — translation x at `m[3][0]` | `m[3, 0]` — same position |
 | HLSL `M[i][j]` | `m[i, j]` — same position |
 
 **The camera-function trap.** Don't reach for `linalg.matrix4_perspective` /
 `matrix4_look_at`: they are **OpenGL-convention** — perspective maps depth to −1..1
-(D3D needs 0..1) and look_at is −Z-forward. Your cube will be depth-clipped into
-oblivion. The LH 0..1-depth versions live in the repo already: `glyph:d3d_math`
+(D3D needs 0..1) and look_at is −Z-forward. Using them directly changes the
+projection and camera convention. The LH 0..1-depth versions live in `glyph:d3d_math`, which
 ports `Matrix4f::PerspectiveFovLHMatrix` / `PerspectiveOffCenterLH` /
 `LookAtLHMatrix` in row-vector form.
 
@@ -185,9 +168,8 @@ inputs. Take matrix builders from `d3d_math` to preserve the book's convention.
 
 One alternative is worth knowing exists, if only to recognize it in other code:
 keeping linalg's column-vector matrices throughout and editing every shader to
-`mul(M, v)`. That's what the official Odin D3D11 example does. It gives up running
-the book's shaders unmodified, which is the whole point here, so this guide doesn't
-take that route.
+`mul(M, v)`. That requires changing the book's shaders, so these reference ports
+retain the row-vector convention.
 
 ---
 
@@ -223,10 +205,12 @@ take that route.
    For a small demo, reporting failure, cleaning up, and exiting is sufficient;
    recovery is an optional extension. Do not continue drawing after failed resize
    leaves missing views. `Present` can report device removal or reset, which also
-   needs an explicit decision rather than silently continuing.
+   needs an explicit decision rather than silently continuing. The current shared
+   `renderer.present` still ignores that HRESULT, matching C++; device-loss
+   handling is a recommendation for your own implementation, not a completed port feature.
    The port's `renderer.resize` returns a `bool`; callers use
    `if !renderer.resize(...) {return}` so existing `defer` cleanup runs before
-   any draw can use incomplete targets (KI-008 fixed).
+   any draw can use incomplete targets.
    After creating a window, use its `GetClientRect` dimensions for the swap chain
    and dependent render targets. Keep the requested size for window creation;
    Windows may give you a smaller client area. Projection choices are separate:
@@ -272,8 +256,9 @@ take that route.
 
 8. **Depth buffers need typeless formats** once you want to read depth in a shader:
    texture `R24G8_TYPELESS`, DSV `D24_UNORM_S8_UINT`, SRV `R24_UNORM_X8_TYPELESS`.
-   For chapters 1–6 a plain `D24_UNORM_S8_UINT` texture is fine; the typeless dance
-   matters in ch. 10–11. See `Source/ViewDepthNormal.cpp` for the engine's version.
+   The introductory ports use a plain `D32_FLOAT` depth texture. Chapter 11 adds
+   shader depth reads; see `Applications/LightPrepass/ViewLightPrepassRenderer.cpp`
+   for the typeless texture and compatible concrete DSV/SRV formats.
 
 9. **Input layouts need shader bytecode.** `CreateInputLayout` validates against the
    compiled VS input signature — keep the VS blob alive until after layout creation,
@@ -292,20 +277,15 @@ take that route.
     set them explicitly. A missing `RSSetViewports` is the classic silent black screen.
 
 12. **Register assignment is per stage and compiled variant.**
-    Without explicit `register()` annotations, FXC numbers each stage's cbuffers from
-    b0 independently, in declaration order, skipping ones that stage doesn't use — so
-    the same `Transforms` cbuffer can be b0 in the VS and b1 in the GS. Textures and
-    buffers are worse: an explicit `register(t0)` **reserves** that slot even if the
-    entry point never touches that resource, pushing an unannotated
-    `StructuredBuffer` in the same file to t1. The symptom is a shader that reads
-    zeros with no warning from anything. Hieroglyph3 never hits this because
-    `ParameterManagerDX11` binds by reflection; binding by hand, check the assignments
-    (`fxc /dumpbin`, `D3DDisassemble`, or reflection via `D3DReflect`). Check every
-    macro variant too: terrain's `SHADING_SIMPLE` domain shader puts `sampleparams`
-    at `b1`, while `SHADING_DEBUG_LOD` puts `patch` there. Always binding the same
-    array supplied camera data as height-map dimensions in shaded mode (fixed KI-019).
-    Small explicit per-variant bindings retain the book's shaders without rebuilding
-    the engine's reflection system.
+    Do not infer slots from source declaration order alone: unused resources and
+    explicit register annotations affect the compiled assignments. The same cbuffer
+    can occupy different slots in different stages or macro variants. Check the
+    compiled result (`fxc /dumpbin`, `D3DDisassemble`, or `D3DReflect`) when binding
+    by hand. The engine's parameter system obtains these bindings through reflection.
+    For example, terrain's `SHADING_SIMPLE` domain shader puts `sampleparams` at
+    b1, while `SHADING_DEBUG_LOD` puts `patch` there. Supplying the same buffer to
+    both is API-valid but provides the wrong data. Small per-variant bindings keep
+    the book's shaders without rebuilding the engine's reflection system.
 
 13. **Match the reference texture's color-space interpretation.** WIC (and
     therefore DirectXTK's `WICTextureLoader`, which the engine uses) inspects a PNG's
@@ -318,8 +298,7 @@ take that route.
     Mip generation is a separate choice. The repository's C++ `LoadTexture` passes
     a context but a null SRV output to DirectXTK, which disables its automatic mip
     generation. The single-mip Odin PNG loader matches that behavior. Generating
-    mips would be an optional quality improvement; see `KI-007` in
-    [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
+    mips would be an optional quality improvement that changes reference output.
 
 14. **UAV counters are invisible from the CPU.** Append/consume and counter UAVs keep
     their count inside the *view*, and there is no getter. You can only write it via
@@ -362,15 +341,13 @@ sync. Later samples request higher feature levels where their shaders require th
 
 **Gotchas:** #5 (wide strings everywhere here), #7. Handle `WM_SIZE` minimally for now
 (ignore it) — proper resize means releasing the RTV, `ResizeBuffers`, recreating views;
-add it when it annoys you.
+add it when extending the sample to support resizing.
 
 ---
 
 ## Chapter 2 — Direct3D 11 Resources
 
-**Read:** all of it, carefully. This is the most load-bearing chapter in the book and
-the knowledge transfers wholesale to DX12 (where you'll do the same reasoning plus
-manual memory management).
+**Read:** all of it. Resource descriptions and access rules underpin every later sample.
 
 Key ideas to extract: the buffer zoo (vertex/index/constant/structured/append-consume/
 byte-address), texture dimensionalities and array/mip subresources, `Usage` +
@@ -386,7 +363,7 @@ read pixels back (that's also how screenshots work — write them out with
 `vendor:stb/image.write_png`; `core:image/png` only decodes).
 
 **Reference:** `Source/BufferConfigDX11.cpp` and `Source/Texture2dConfigDX11.cpp` —
-each "config" class is just a `D3D11_*_DESC` with good defaults; steal the defaults as
+each "config" class is just a `D3D11_*_DESC` with good defaults; translate the defaults into
 small Odin helper procs that return filled desc structs (Odin's struct literals with
 named fields make these barely necessary, but the *defaults* are the value).
 
@@ -423,8 +400,6 @@ into a modified VS, then restore the original shader for comparison.
   `RotationMatrixY` — your `camera.odin` source material.
 - `Source/GeometryGeneratorDX11.cpp` — procedural box/sphere/grid vertex data if you'd
   rather generate than hand-write.
-- The official Odin example — the same program modulo shader conventions; diff against
-  it when stuck.
 
 **The chapter's second sample, ImmediateRenderer**, is worth doing after the cube: it
 adds a skybox, which is where cube maps and `TEXTURECUBE` SRVs enter. Its `App.cpp`
@@ -451,14 +426,6 @@ phase; the fixed tessellator's domains (tri/quad/isoline) and partitioning schem
 domain shader as "vertex shader for generated points"; `SV_TessFactor` /
 `SV_InsideTessFactor` / `SV_DomainLocation`.
 
-**If you plan to move to DX12:** DX11 and DX12 tessellation are the *same hardware feature
-with identical HLSL* — same attributes, same system values, same max factor of 64. The
-only difference is plumbing: DX11 binds HS/DS on the context (`HSSetShader`/
-`DSSetShader` + patch-list topology), DX12 bakes them into the PSO. Luna's DX12 book
-(ch. 14) re-covers the basics with worked examples (quad patch, distance-based LOD,
-Bézier surface). You can defer implementation to that book, or implement here to
-understand the stages with the D3D11 plumbing you have already learned.
-
 **Explore while reading:** run the built **TessellationParams** demo from
 `Applications/Bin` while reading — it lets you explore triangle and quad domains,
 partitioning modes, and tessellation factors. (The Odin
@@ -474,17 +441,17 @@ Extend your chapter 3 app with two shader stages and topology
 
 ## Chapter 5 — The Computation Pipeline
 
-**Read:** all of it. The DX11 compute model — `Dispatch`, `[numthreads]`, thread/group
-system values, UAVs on buffers and textures, structured + append/consume buffers,
-`groupshared` memory, sync barriers — transfers to DX12 nearly verbatim, and this
-chapter assumes less than Luna's compute chapter does. If you stay on DX11, compute is
-how you'll do anything simulation- or post-processing-shaped.
+**Read:** all of it: `Dispatch`, `[numthreads]`, thread/group system values, UAVs,
+structured and append/consume buffers, `groupshared` memory, and synchronization
+barriers. These support the later image processing and simulation examples.
 
 **Odin deliverable:** port **BasicComputeShader**: load `Outcrop.png` with
 `core:image/png` (→ texture with initial data), run `InvertColorCS.hlsl` reading the
 SRV and writing a second texture through a UAV, then draw the result with a fullscreen
-textured pass (`TextureVS.hlsl` / `TexturePS.hlsl`). Dispatch
-`ceil(width/Nx) × ceil(height/Ny)` groups to cover the image.
+textured pass (`TextureVS.hlsl` / `TexturePS.hlsl`). The reference output is
+640×480, with 20×20 threads per group and a 32×24 dispatch. The unchanged shader
+has no bounds guard. To support arbitrary dimensions, add a shader bounds check
+as well as rounding the dispatch group counts up.
 
 **Reference:** `Applications/BasicComputeShader/App.cpp`;
 `Applications/Data/Shaders/InvertColorCS.hlsl`; texture in
@@ -511,28 +478,17 @@ Worth absorbing properly: semantics and stage linkage rules, the cbuffer packing
 
 **Toolchain note:** the book (and your port) compiles with FXC
 (`d3d_compiler.Compile`, with profiles such as `vs_4_0`, `ps_4_0`, or `cs_5_0`
-according to the sample). Luna's DX12 book also uses FXC
-(SM 5.x); DXC/SM6 comes later still. So this knowledge doesn't expire at the DX12
-boundary.
+according to the sample). Preserve each sample's entry points and profiles
+when compiling its unchanged shaders.
 
 ---
 
-## Decision point
+## Continuing after the fundamentals
 
-After chapter 6 you've covered devices, resources, every pipeline stage, compute, and
-HLSL — the complete D3D11 fundamentals. From here:
+The following examples build on chapters 1–6. Choose a rendering technique to
+explore, using the reference ports to compare intermediate stages.
 
-- **Jump to Luna DX12:** you'll re-meet everything with explicit memory management,
-  PSOs, descriptor heaps, and fences (`vendor:directx/d3d12` + `dxc` are already in
-  the toolchain). Skinning and tessellation-in-anger get properly covered there.
-- **Stay on DX11 a while:** do the optional chapters below, in order of
-  effort-to-payoff.
-
----
-
-## Optional continuations (if staying with DX11)
-
-### Chapter 10 — Image Processing (best payoff, do first)
+### Chapter 10 — Image Processing
 
 Gaussian and bilateral filters as compute shaders, including the brute-force →
 separable → `groupshared`-cached optimization progression — the canonical intro to
@@ -552,13 +508,12 @@ Water uses FL10 and SM4, including optional compute and structured-buffer
 support. Check `D3D10_X_HARDWARE_OPTIONS` before constructing its scene; an FL10
 device alone does not establish that capability. ParticleStorm uses FL11/SM5.
 
-### Chapter 11 — Deferred Rendering (biggest lift)
+### Chapter 11 — Deferred Rendering
 
 G-buffer via multiple render targets, then screen-space light accumulation; the
-LightPrepass sample shows the lighter-weight variant. Valuable because Luna's DX12 book
-*doesn't* really cover deferred — but it is a substantial sample and wants
-scene infrastructure (meshes, many lights) you haven't built. Consider it a standalone
-project. Reference: `Applications/DeferredRendering/`, `Data/Shaders/GBuffer*.hlsl`.
+LightPrepass sample separates lighting from the final material pass. These samples
+introduce multiple targets, many lights, and several optimization modes, so compare
+one pass or mode at a time. Reference: `Applications/DeferredRendering/`, `Data/Shaders/GBuffer*.hlsl`.
 
 The Odin demos intentionally provide working first-person cameras here. These two
 C++ samples omit camera event registration in their setup overrides, so their
@@ -568,23 +523,22 @@ speed error from that difference.
 
 ---
 
-## Further chapters and an optional DX12 route
+## Further chapters
 
 - **Ch. 7, Multithreaded Rendering / Ch. 13, Multithreaded Paraboloid Rendering:**
   built on D3D11 deferred contexts. Study these for D3D11 multithreading; if moving
   directly to DX12, its command-list model is a separate topic. This is
   the one gap in the reference ports: MirrorMirror (ch. 13) has none.
-- **Ch. 8, Mesh Rendering:** vertex skinning — Luna's DX12 book has a full skinned-mesh
-  chapter, so you can implement there or use this chapter to learn it now.
+- **Ch. 8, Mesh Rendering:** vertex skinning and hierarchical bone animation.
   *(Reference port: `skin_and_bones`.)*
 - **Ch. 9, Dynamic Tessellation:** advanced applications of ch. 4; implement here
-  to explore adaptive geometry, or defer until your DX12 work. *(Reference ports: `curved_pn_triangles`,
+  to explore adaptive geometry. *(Reference ports: `curved_pn_triangles`,
   `interlocking_terrain_tiles`.)*
   The terrain port includes the complex-LOD compute prepass and per-variant shading
-  bindings (KI-002/KI-019 fixed). Curved PN's adaptive mode has an
+  bindings. Curved PN's adaptive mode has an
   inherited adjacency mismatch and can produce malformed or incomplete patches
   in either implementation.
-- **Not book content at all** (engine/blog demos — ignore): BasicScripting (Lua),
+- **Additional engine/blog demos outside the book:** BasicScripting (Lua),
   BasicScenes, BasicRenderViews, KinectPlayground, Kinect2Playground,
   OculusRiftSample, MFCwithD3D11, GlyphletViewerWPF, Glyphlets, VolumeRendering,
   AmbientOcclusionI, PhysicalRenderingSandbox, ViewFromTheWindow.
@@ -604,7 +558,8 @@ simulations need not produce identical pixels at the same wall-clock delay.
 Windows DPI scaling can also affect capture dimensions. Use an actual client-area
 capture or an inspected RenderDoc frame; a black capture immediately after resize
 may be a transient frame, especially in the slower image filters. The reference
-can contain defects too: consult the issue record before copying broken behavior.
+can contain defects too: consult the sample notes on inherited limitations before
+copying behavior that appears incorrect.
 
 ---
 
@@ -622,31 +577,14 @@ the renderer. Study `SpriteFontDX11` and `SpriteRendererDX11` to understand that
 separation. Replacing the atlas baker is enough; you need not recreate the engine's
 entire font-loading infrastructure. GDI+ binding work would be a separate task.
 
-**`vendor:stb/easy_font`** is the small option. It's a pure-Odin source port, no
-`foreign import` and no `.lib` — it pulls in only `core:math` and `core:mem`.
-`print(x, y, text, color, quads[:])` fills a buffer of 64-byte `Quad`s (four
-`Vertex{v: [3]f32, c: [4]u8}` corners) in screen-space pixels. There are **no
-texture coordinates**, because there's no atlas and no texture: you're drawing
-colored quads. A small renderer needs HLSL mapping pixels to NDC, a dynamic vertex
-buffer, indices, alpha blending, and depth disabled,
-following the same inline-shader pattern `BLIT_HLSL` already uses in
-`deferred_rendering` and `light_prepass`. The font is chunky and wireframe-ish —
-fine for a keybind legend, not for anything you want to look designed.
+**`vendor:stb/easy_font`** generates untextured colored quads for simple labels.
+A small D3D11 renderer needs a dynamic vertex buffer, indices, and a shader that
+maps pixel coordinates to clip space. Disable depth testing for the overlay.
 
-**`vendor:stb/truetype`** is an atlas-based option. `PackBegin` /
-`PackFontRange` / `PackEnd` bake a proper atlas from a `.ttf` and
-`GetPackedQuad` hands back positioned, textured quads. Note it calls stb_rect_pack
-*internally* — you don't drive `vendor:stb/rect_pack` yourself. Costs a link
-dependency (`stb_truetype.lib`, prebuilt in the toolchain's `vendor/stb/lib`) and a
-decision about where the font file comes from; the C++ asks for `Consolas` by name,
-so the equivalent is loading `C:\Windows\Fonts\consola.ttf`.
+**`vendor:stb/truetype`** bakes an atlas from a font file and provides positioned
+textured quads. This adds font-file selection and texture setup; the toolchain
+includes its prebuilt library.
 
-**DirectWrite** is another route, but integrating its text services and any
-Direct2D rendering adds a separate API and interop lesson. Check binding support
-in your toolchain before choosing it.
-
-**[Slug](https://terathon.com/blog/decade-slug.html)** renders glyph outlines
-directly from Bézier data in the pixel shader — sharp at any magnification, no atlas,
-no baked resolution. Outline extraction, curve preprocessing, and band construction
-make this a substantial separate project. Consult its current documentation if
-that technique, rather than a simple sample label, is what you want to study.
+**DirectWrite** offers more extensive text services, with additional API and
+interop work. Check your toolchain's bindings before choosing it. For these book
+exercises, a title bar or a small quad renderer is usually enough.

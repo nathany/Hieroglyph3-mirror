@@ -4,9 +4,8 @@ Odin reference implementations of the Hieroglyph3 sample applications from
 *Practical Rendering and Computation with Direct3D 11*, written against raw
 D3D11 via `vendor:directx`. Companion to
 [D3D11-Odin-Guide.md](../D3D11-Odin-Guide.md); each app follows its C++ original
-(in `../Applications/`) with documented deviations and outstanding defects.
-Read [KNOWN_ISSUES.md](../KNOWN_ISSUES.md) and [validation records](VALIDATION.md)
-alongside the sample notes; “runs” does not imply every mode matches the reference.
+(in `../Applications/`) with the accepted differences and inherited limitations
+described below. Historical test evidence is in [VALIDATION.md](VALIDATION.md).
 
 ## Layout
 
@@ -16,6 +15,9 @@ odin_port/
 ├── glyph/             # support library, imported as the `glyph:` collection
 │   ├── window/        #   Win32 window wrappers (≈ Win32RenderWindow, Win32Window)
 │   ├── renderer/      #   device/swap chain/depth/screenshot (≈ RendererDX11 subset)
+│   ├── shader/        #   HLSL compilation and reference matrix packing
+│   ├── ms3d/          #   shared MilkShape3D asset reader
+│   ├── paths/         #   repository asset lookup
 │   └── d3d_math/      #   row-vector matrix helpers (≈ Matrix4f / DirectXMath)
 └── apps/              # one package per sample application
 ```
@@ -67,22 +69,34 @@ The math helpers in `glyph:d3d_math` have a test suite:
 just test
 ```
 
+## Failure handling
+
+The port uses explicit ownership and clean exits for unrecoverable failures.
+Constructors release partial resources and return empty results; callers also
+clean up successful siblings when another resource fails. This replaces reliance
+on C++ engine ownership with small Odin procedures. Asset readers reject malformed
+or truncated data before accessing it, while staying limited to the supplied formats.
+Resize, dynamic mesh upload, and image-target replacement failures end the demo
+before incomplete resources reach a draw or dispatch. These safety choices preserve
+the successful rendering path and do not introduce a recovery framework.
+
 ## Applications
 
 ### Controls
 
 The C++ samples draw their controls on screen; text rendering is out of scope here
 (see *Build & run* above), so they're documented instead. App-specific keys are in the
-table's **Controls** column; these are the ones shared across demos:
+table's **Controls** column; these are shared by the rendering demos
+(BasicWindow has neither handler):
 
 | Key | Effect |
 |---|---|
 | `Escape` | Quit |
-| `Space` | Save a screenshot (PNG, next to the executable) — *except in `image_processor`, which rebinds it* |
+| `Space` | Save a screenshot (PNG, in the working directory — usually `odin_port/` with `just`) — *except in `image_processor`, which rebinds it* |
 
-Five demos share a first-person camera (`fp_camera.odin`, an identical copy in each —
+Six demos share a first-person camera (`fp_camera.odin`, a local copy in each —
 `immediate_renderer`, `light_prepass`, `deferred_rendering`, `water_simulation`,
-`particle_storm`):
+`particle_storm`, `skin_and_bones`):
 
 | Input | Effect |
 |---|---|
@@ -92,28 +106,37 @@ Five demos share a first-person camera (`fp_camera.odin`, an identical copy in e
 | `Ctrl` (hold) | 3× move speed |
 | Right-drag | Look around (pitch clamped to ±90°) |
 
-Note `W`/`A` mean *movement* in those five, but *wireframe* and a shader toggle in
+These cameras accumulate queued mouse deltas and clamp total pitch; C++ overwrites
+deltas and clamps only each frame's rotation increment. This keeps queued motion
+and prevents flipping. SkinAndBones also replays its animation when **A** is released.
+
+The rendering samples capture after `Present`, preserving C++ call order. With
+`DISCARD`, those backbuffer contents are not guaranteed; capture before `Present`
+if adding dependable screenshots to your own implementation. Both versions also
+ignore the `Present` HRESULT, so device-loss handling remains an extension.
+
+Note `W`/`A` mean *movement* in those six, but *wireframe* and a shader toggle in
 `curved_pn_triangles` and `interlocking_terrain_tiles`, which have no free camera.
 Where a demo shows live state (tessellation factors, active modes), it goes in the
 **window title bar**.
 
-| App | C++ original | Book chapter | Controls | Status |
+| App | C++ original | Book chapter | Controls | Scope / notes |
 |---|---|---|---|---|
-| `basic_window` | Applications/BasicWindow | 1 | — | ✅ matches C++ behavior |
-| `basic_application` | Applications/BasicApplication | 1 | — | ✅ matches C++ behavior |
-| `rotating_cube` | Applications/RotatingCube | 3 | — | ✅ matches C++ behavior |
-| `basic_compute_shader` | Applications/BasicComputeShader | 5 | — | ✅ pixel-identical to C++ |
-| `basic_tessellation` | Applications/BasicTessellation | 4 | — | ✅ matches C++ behavior |
-| `immediate_renderer` | Applications/ImmediateRenderer | 3 | camera; `1`/`2`/`3` off-center projection (symmetric / right / left) | ✅ core visual scope |
-| `image_processor` | Applications/ImageProcessor | 10 | `N` next filter · `I` next image · `Space` cycles sampler · left-drag pan · right-drag / wheel zoom | ✅ all 5 filters/images/samplers |
-| `tessellation_params` | Applications/TessellationParams | 4 | `G` tri/quad domain · `P` partitioning mode · `E`/`I` select edge / inside factor · numpad `+`/`-` adjust it | ✅ state in the title bar |
-| `skin_and_bones` | Applications/SkinAndBones | 8 | `WASDQE` move · Ctrl speed · right-drag look · `A` release replays | Animation, camera and resize verified |
+| `basic_window` | Applications/BasicWindow | 1 | — | matches C++ behavior |
+| `basic_application` | Applications/BasicApplication | 1 | — | matches C++ behavior |
+| `rotating_cube` | Applications/RotatingCube | 3 | — | matches C++ behavior |
+| `basic_compute_shader` | Applications/BasicComputeShader | 5 | — | fixed-size compute inversion |
+| `basic_tessellation` | Applications/BasicTessellation | 4 | — | matches C++ behavior |
+| `immediate_renderer` | Applications/ImmediateRenderer | 3 | camera; `1`/`2`/`3` off-center projection (symmetric / right / left) | core visual scope |
+| `image_processor` | Applications/ImageProcessor | 10 | `N` next filter · `I` next image · `Space` cycles sampler · left-drag pan · right-drag / wheel zoom | five filters, five images, two samplers |
+| `tessellation_params` | Applications/TessellationParams | 4 | `G` tri/quad domain · `P` partitioning mode · `E`/`I` select edge / inside factor · numpad `+`/`-` adjust it | state in the title bar |
+| `skin_and_bones` | Applications/SkinAndBones | 8 | `WASDQE` move · Ctrl speed · right-drag look · `A` release replays | animation, camera and resize |
 | `curved_pn_triangles` | Applications/CurvedPointNormalTriangles | 9 | `W` wireframe · `A` adaptive silhouette · numpad `+`/`-` tessellation factor (1–10) | Base mode runs; inherited adaptive defect |
-| `interlocking_terrain_tiles` | Applications/InterlockingTerrainTiles | 9 | `W` wireframe · `L` hull-shader complexity · `D` shading mode (solid / shaded / LOD debug) · `A` automated camera | Simple/complex LOD and shading verified |
-| `light_prepass` | Applications/LightPrepass | 11 | camera; `N` cycles light mode | ✅ MSAA deferred lighting |
-| `deferred_rendering` | Applications/DeferredRendering | 11 | camera; `V` display · `N` light mode · `K` G-buffer opt · `O` light opt · `M` anti-aliasing | ✅ V/N/K/O/M toggles |
-| `water_simulation` | Applications/WaterSimulationI | 12 | camera | ✅ FL10/SM4 simulation and reference camera |
-| `particle_storm` | Applications/ParticleStorm | 12 | camera | ✅ reference camera and clean optional count readback |
+| `interlocking_terrain_tiles` | Applications/InterlockingTerrainTiles | 9 | `W` wireframe · `L` hull-shader complexity · `D` shading mode (solid / shaded / LOD debug) · `A` automated camera | simple/complex LOD and shading |
+| `light_prepass` | Applications/LightPrepass | 11 | camera; `N` cycles light mode | MSAA deferred lighting |
+| `deferred_rendering` | Applications/DeferredRendering | 11 | camera; `V` display · `N` light mode · `K` G-buffer opt · `O` light opt · `M` anti-aliasing | V/N/K/O/M toggles |
+| `water_simulation` | Applications/WaterSimulationI | 12 | camera | FL10/SM4 simulation and reference camera |
+| `particle_storm` | Applications/ParticleStorm | 12 | camera | reference camera and clean optional count readback |
 
 Rendering samples request the sizes listed below, then use the actual created
 client size for the swap chain, shared depth/viewport, and dependent window-sized
@@ -204,11 +227,13 @@ wireframe on white, with every tessellator input adjustable live. **G**
 toggles domain, **P** cycles partitioning (pow2/integer/fractional_odd/
 fractional_even — one hull shader compiled per mode via preprocessor
 defines, `glyph:shader`'s `compile_defines`), **E**/**I** pick which edge or
-inside factor to edit, **numpad +/−** adjust it (clamped 1–64, quad factors
+inside factor to edit, **numpad +/−** adjust it (edits accepted within 1–64, quad factors
 run through `Process2DQuadTessFactorsAvg` in the shader). The C++ shows all
 state as on-screen text; here it lives in the **window title bar** instead.
 Space screenshots with the C++'s full `GetName` prefix ("Direct3D 11
-Tessellation Parameters Demo…").
+Tessellation Parameters Demo…"). Switching from quad to triangle preserves the
+selected factor index, as in C++; an index unavailable in the triangle domain
+ignores adjustments until **E** or **I** selects a valid factor.
 
 ### skin_and_bones
 
@@ -227,13 +252,13 @@ actors' node motion rides inside the skin matrices via the bind-pose-before-
 positioning call order; and the app's `LightColor` parameter is never read
 by any of these shaders.
 
-The cone's collapsed apex ring keeps zero CPU normals, matching C++ (KI-004 fixed).
+The cone's collapsed apex ring keeps zero CPU normals, matching C++.
 Camera keys are **W/S** forward/back, **A/D** strafe, **Q/E** up/down, **Ctrl**
 for triple speed, and right-drag to look. Releasing **A** both stops strafing and
 replays the animation; this avoids C++ consuming that release and latching left
 movement. Resize recreates the backbuffer/depth views and projection, and failure
-exits cleanly (KI-003 fixed). The camera follows the other Odin samples' accumulated
-mouse deltas and total-pitch clamp. The cone uses C++'s anisotropy 16 (KI-011 fixed).
+exits cleanly. The camera follows the other Odin samples' accumulated
+mouse deltas and total-pitch clamp. The cone uses C++'s anisotropy 16.
 
 ### curved_pn_triangles
 
@@ -262,8 +287,7 @@ into a 32×32 plane/deviation lookup. Each 16×16 thread group covers one tile.
 The UAV is unbound before the hull shader reads the lookup at t1; other height-map
 sizes are rejected explicitly. Domain-shader cbuffers are bound per
 compiled shading variant: `main` at b0, then `sampleparams` for N·L shading or
-`patch` for LOD debug at b1 (KI-019 fixed). The requested 1024×768 size now
-matches C++ (KI-013 fixed).
+`patch` for LOD debug at b1. The requested 1024×768 size matches C++.
 
 ### light_prepass
 
@@ -318,7 +342,9 @@ is subtly wrong in the original too. The engine's SpriteRenderer display
 blit is replaced by an inline alpha-blended pixel-rect blit shader.
 
 As in LightPrepass, C++ omits camera event registration in its setup override.
-Odin deliberately provides working camera input; preserve that usability improvement.
+Odin deliberately provides working camera input for scene exploration.
+The light-volume clip test also retains a C++ limitation: it uses the light radius
+while the rendered sphere is 10% larger, so its shell can clip near the far plane.
 
 ### water_simulation
 
@@ -338,7 +364,7 @@ the damping factor 0.9995 applies **per iteration**, so at uncapped
 thousands of FPS the waves flatten within a couple of seconds — the C++
 behaves the same way, just at its own frame rate. The camera starts at
 (-100, 30.5, -100), matching C++: its spatial controller replaces the default
-node translation rather than adding it (KI-006 fixed).
+node translation rather than adding it.
 The port requests FL10 and SM4 like C++. It checks optional downlevel compute
 and structured-buffer support and exits with a clear error if unavailable.
 The C++'s unused "FinalColor" parameter is omitted.
@@ -364,11 +390,11 @@ VS's `SimulationState` buffer has no explicit register, but FXC still
 honors the (unused-in-VS) `ParticleTexture : register(t0)` reservation, so
 the buffer lands on **t1**. The C++'s `bDebugActive` counter-readback path
 is mirrored behind `-define:DEBUG_COUNTS=true`: its staging buffer is checked
-at startup and released on exit (KI-017 fixed). FPS in the title bar;
+at startup and released on exit. FPS in the title bar;
 the camera starts at C++'s final translation (-100, 60.5, -100), without adding
-the default node offset (KI-006 fixed).
+the default node offset.
 The priming pass explicitly unbinds both UAV slots before insertion reuses one,
-preserving the append counters without a startup binding hazard (KI-020 fixed).
+preserving the append counters without a startup binding hazard.
 
 ### immediate_renderer
 
@@ -384,7 +410,7 @@ a circling point light driving the engine's UE4-style PBR shaders, used
 unchanged. First-person camera (right-drag look, W/A/S/D/Q/E, Ctrl sprint),
 keys 1/2/3 off-center projections (`glyph:d3d_math`'s
 `perspective_off_center_lh`), live swap-chain resize (`glyph:renderer`'s
-`resize`), Esc/Space as usual. A failed dynamic mesh allocation or upload now
+`resize`), Esc/Space as usual. A failed dynamic mesh allocation or upload
 reports an error and exits before drawing incomplete geometry; this improves
 the reference's unchecked failure path without adding recovery machinery.
 

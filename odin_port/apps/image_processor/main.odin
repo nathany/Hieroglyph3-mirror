@@ -234,6 +234,8 @@ create_compute :: proc(device: ^d3d11.IDevice, file, entry: string) -> (cs: ^d3d
 }
 
 create_pipeline :: proc(r: ^renderer.Renderer) -> (result: Pipeline, ok: bool) {
+	// Return values are copied before defers: build locally so a failed return
+	// stays empty while deferred cleanup releases partial resources.
 	p: Pipeline
 	defer if !ok {pipeline_destroy(&p)}
 	device := r.device
@@ -467,7 +469,9 @@ main :: proc() {
 			filter_target_destroy(&intermediate)
 			filter_target_destroy(&output)
 			img := &images[image_index]
-			// Each constructor cleans a failed target; the existing defers
+			// Unlike C++'s unchecked replacement, failure ends the demo before
+			// filtering with missing views. Each constructor cleans a failed target;
+			// the existing defers
 			// release any successful replacement before the demo exits.
 			ok: bool
 			intermediate, ok = create_filter_target(&r, img.width, img.height)
@@ -521,6 +525,8 @@ main :: proc() {
 		ctx->ClearDepthStencilView(r.dsv, {.DEPTH}, 1.0, 0)
 
 		viewing := Image_Viewing_Data {
+			// Use actual pixels immediately so the viewer fits constrained windows.
+			// C++ starts with requested dimensions and updates them on resize.
 			window_size    = {f32(r.width), f32(r.height), 0, 0},
 			image_size     = {iw, ih, 0, 0},
 			viewing_params = state.viewing_params,

@@ -674,6 +674,8 @@ immutable_buffer :: proc(device: ^d3d11.IDevice, data: rawptr, byte_width: u32, 
 }
 
 setup :: proc(r: ^renderer.Renderer) -> (result: Scene, ok: bool) {
+	// Return values are copied before defers: build locally so a failed return
+	// stays empty while deferred cleanup releases partial resources.
 	s: Scene
 	defer if !ok {scene_destroy(&s)}
 	device := r.device
@@ -1027,6 +1029,8 @@ main :: proc() {
 		return
 	}
 
+	// This C++ setup override omits camera event registration, leaving its
+	// viewpoint fixed. Odin intentionally enables input for scene exploration.
 	cam := Fp_Camera {
 		position = {4, 4.5, -4},
 		pitch    = 0.407,
@@ -1294,6 +1298,8 @@ main :: proc() {
 				// The C++'s quad fallback (volume crossing both clip planes)
 				// can't happen with this light grid, so only spheres draw.
 				light_pos_vs := [4]f32{light.position.x, light.position.y, light.position.z, 1} * view
+				// Preserve ViewLights.cpp: this test uses Range, but the sphere below
+				// uses 1.1 * Range. The expanded shell can clip near the far plane.
 				intersects_far := light_pos_vs.z + light.range >= FAR_CLIP
 
 				// 1.1x slack so the unit sphere comfortably contains the

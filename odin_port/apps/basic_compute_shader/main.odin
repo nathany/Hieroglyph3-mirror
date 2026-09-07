@@ -91,6 +91,8 @@ scene_destroy :: proc(s: ^Scene) {
 }
 
 setup :: proc(r: ^renderer.Renderer) -> (result: Scene, ok: bool) {
+	// Return values are copied before defers: build locally so a failed return
+	// stays empty while deferred cleanup releases partial resources.
 	s: Scene
 	defer if !ok {scene_destroy(&s)}
 	device := r.device

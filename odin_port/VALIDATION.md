@@ -10,7 +10,9 @@ all thirteen P3 issues have verified fixes. The original baseline and intermedia
 checkpoints below preserve what was observed before each repair. LightPrepass's
 mask-pass warning and CurvedPN's adaptive-topology diagnostic remain documented
 inherited behavior; they are not newly introduced regressions. See
-[KNOWN_ISSUES.md](../KNOWN_ISSUES.md) for classifications and repair scope.
+[sample notes](README.md) for current behavior and retained limitations. The retired
+issue tracker, including classifications and rejected reports, remains available
+with `git show c6b394a:KNOWN_ISSUES.md`; the sections below retain fix evidence.
 
 ## Original visual baseline
 
@@ -339,3 +341,21 @@ Artifacts are outside the repository under:
 
 These local artifacts are not distributed with the repository. This document
 retains the conclusions and limits; the local scripts/logs retain the exact actions.
+
+## Documentation cleanup after c6b394a
+
+Retired `KNOWN_ISSUES.md` after preserving accepted departures and inherited
+limitations in sample notes and nearby code comments. The tracker is recoverable
+from the revision named above; the historical checkpoints in this record remain
+unchanged. Corrected the skin-matrix explanation, guide dispatch/depth examples,
+screenshot location, and camera coverage; removed resolved issue labels and
+repeated curriculum advice from reader-facing material.
+
+Validation: `just verify` passed all 15 strict application checks and all eight
+tracked math tests. A diff check confirmed that every changed Odin source line
+was a comment or whitespace; executable code and shaders were unchanged. All nine
+local Markdown links in AGENTS, the guide, README, and this record resolved,
+including their heading/line anchors; code fences were balanced and no live link
+to the retired tracker remained. `git diff --check` passed. No new graphical,
+ASan, or D3D debug-layer runs were needed for this documentation-only cleanup;
+the preceding runtime evidence remains the applicable baseline.

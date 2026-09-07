@@ -272,6 +272,8 @@ immutable_buffer :: proc(device: ^d3d11.IDevice, data: rawptr, byte_width: u32, 
 }
 
 create_pipeline :: proc(r: ^renderer.Renderer) -> (result: Pipeline, ok: bool) {
+	// Return values are copied before defers: build locally so a failed return
+	// stays empty while deferred cleanup releases partial resources.
 	p: Pipeline
 	defer if !ok {pipeline_destroy(&p)}
 	device := r.device

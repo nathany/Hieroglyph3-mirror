@@ -2,9 +2,9 @@
 // mirroring the parts of RendererDX11 (Source/RendererDX11.cpp) and the
 // identical ConfigureEngineComponents boilerplate each C++ sample repeats.
 //
-// COM lifetimes are manual: every Create*/Get* AddRefs what it returns, so
-// locals are released with `defer x->Release()` and stored interfaces in
-// reverse creation order in destroy.
+// COM lifetimes are manual: successful creation and interface queries return
+// owned references; getters such as GetDesc only copy data. Release local owned
+// interfaces with `defer x->Release()` and stored interfaces in destroy.
 package renderer
 
 import "core:fmt"
@@ -21,7 +21,10 @@ import "glyph:paths"
 // 2 buffers, DISCARD blit model — matching the C++ comes before modern
 // flip-model here), backbuffer RTV, D32_FLOAT depth buffer + DSV (per
 // Texture2dConfigDX11::SetDepthBuffer), both bound, and a full-window
-// viewport.
+// viewport. Callers supply the actual client size, keeping depth and viewport
+// consistent with the swap chain even when Windows constrains the requested size.
+// This improves the standalone C++ samples that retain requested depth/viewport
+// sizes; camera projection choices remain sample-specific.
 Renderer :: struct {
 	device:     ^d3d11.IDevice,
 	ctx:        ^d3d11.IDeviceContext,
@@ -195,6 +198,9 @@ destroy :: proc(r: ^Renderer) {
 }
 
 // Mirrors RendererDX11::Present's defaults: no vsync, no flags.
+// Like C++, this discards the HRESULT; device removal/reset handling remains
+// an optional extension. The samples also capture after Present, when DISCARD
+// backbuffer contents are no longer guaranteed. Capture before it for reliability.
 present :: proc(r: ^Renderer) {
 	r.swap_chain->Present(0, {})
 }
@@ -206,6 +212,8 @@ present :: proc(r: ^Renderer) {
 // released before ResizeBuffers. On failure, views are nil and dimensions retain
 // their last successful values. The caller must stop rendering and destroy r;
 // a clean demo exit is simpler than rebuilding a device/recovery framework.
+// C++ attempts to reacquire the backbuffer even after ResizeBuffers fails; the
+// Odin callers deliberately exit instead of drawing with incomplete targets.
 resize :: proc(r: ^Renderer, width, height: u32) -> (ok: bool) {
 	width := max(width, 1)
 	height := max(height, 1)
@@ -327,6 +335,9 @@ load_texture_png :: proc(
 
 	format: dxgi.FORMAT = .R8G8B8A8_UNORM_SRGB if png_declares_srgb(img) else .R8G8B8A8_UNORM
 
+	// C++ LoadTexture passes a null SRV output to DirectXTK (oct2025). Its
+	// WIC loader requires both context and SRV output to generate mips; creating
+	// a view later does not generate them. One mip therefore preserves parity.
 	desc := d3d11.TEXTURE2D_DESC {
 		Width      = u32(img.width),
 		Height     = u32(img.height),

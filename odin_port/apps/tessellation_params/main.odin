@@ -270,6 +270,8 @@ create_patch :: proc(
 }
 
 setup :: proc(r: ^renderer.Renderer) -> (result: Scene, ok: bool) {
+	// Return values are copied before defers: build locally so a failed return
+	// stays empty while deferred cleanup releases partial resources.
 	s: Scene
 	defer if !ok {scene_destroy(&s)}
 	device := r.device
@@ -400,6 +402,8 @@ main :: proc() {
 		// Apply key presses to the state (App::HandleEvent).
 		if state.toggle_geometry {
 			state.toggle_geometry = false
+			// Like C++, keep the selected index across domains. Quad-only indices
+			// ignore edits in Tri until E/I selects an available factor.
 			tess.domain = .Tri if tess.domain == .Quad else .Quad
 			title_dirty = true
 		}

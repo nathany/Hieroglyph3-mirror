@@ -4,6 +4,9 @@
 //   - Keys: W/S forward/back, A/D strafe, Q/E up/down, Ctrl = 3x speed
 //     (move speed 10 units/s), right-mouse drag rotates (0.24 * dt radians
 //     per pixel), pitch clamped to +/- pi/2.
+//     Deliberate usability changes: accumulate queued mouse deltas and clamp
+//     total pitch to prevent flipping. C++ overwrites deltas and clamps only
+//     each frame's rotation increment.
 //   - The engine's Euler composition is RotationMatrixXYZ = Rz * Rx * Ry;
 //     with z = 0 that's Rx(pitch) * Ry(yaw).
 //   - MoveForward translates along the rotation matrix's forward basis —
