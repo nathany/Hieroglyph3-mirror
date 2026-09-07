@@ -91,11 +91,18 @@ load_cubemap_dds :: proc(
 		return
 	}
 
-	face_size := int(width * height * 4)
-	if len(data) < 128 + 6 * face_size {
+	// Bound dimensions before multiplying or narrowing. At D3D11's cube
+	// limit, six BGRA faces fit in u64 (and in this x64 sample's int).
+	if width == 0 || height == 0 || width > d3d11.REQ_TEXTURECUBE_DIMENSION || height > d3d11.REQ_TEXTURECUBE_DIMENSION {
+		fmt.eprintln(filename, "has invalid cube map dimensions")
+		return
+	}
+	face_bytes := u64(width) * u64(height) * 4
+	if u64(len(data) - 128) < 6 * face_bytes {
 		fmt.eprintln(filename, "has truncated cube map data")
 		return
 	}
+	face_size := int(face_bytes)
 
 	desc := d3d11.TEXTURE2D_DESC {
 		Width      = width,

@@ -40,7 +40,7 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 | KI-011 | Skin anisotropy | ✅ Fixed port fidelity defect | P3 | Set reference value 16 |
 | KI-012 | Partial initialization | Confirmed ownership defects | P3 | Consistent cleanup; no normal-path change |
 | KI-013 | Terrain requested resolution | ✅ Fixed port fidelity defect | P3 | Restore 1024x768 |
-| KI-014 | DDS size arithmetic | Confirmed input-hardening issue | P3 | Bound dimensions and validate wide sizes |
+| KI-014 | DDS size arithmetic | ✅ Fixed input-hardening issue | P3 | Bound dimensions and validate wide sizes |
 | KI-015 | Temporary allocations | Confirmed Odin lifetime issue | P3 | Scope/reset scratch allocations |
 | KI-016 | MS3D count reads | Confirmed input-hardening issue | P3 | Two explicit bounds checks |
 | KI-017 | Particle debug-count buffer | ✅ Fixed optional-path ownership defect | P3 | Check creation and release the buffer |
@@ -286,7 +286,11 @@ physical pixels for Odin and 1536x1152 for C++, confirming the requested-size ga
 
 ### KI-014 — DDS cube-map size arithmetic can wrap
 
-- [ ] Validate dimensions and the six-face payload before indexing or narrowing.
+- [x] ✅ Validate dimensions and the six-face payload before indexing or narrowing.
+
+**Verified fix:** DDS dimensions are bounded before wide six-face payload arithmetic and narrowing. Eight malformed fixtures reject safely; valid synthetic and bundled cube maps load and render.
+
+Original finding (before the fix):
 
 The [DDS reader](odin_port/apps/immediate_renderer/skybox.odin#L94) computes
 `width * height * 4` in `u32` before widening. An otherwise accepted 128-byte

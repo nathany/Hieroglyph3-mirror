@@ -278,6 +278,10 @@ just check particle_storm passed. Normal and DEBUG_COUNTS=true builds each ran s
 
 Normal and DEBUG_COUNTS checks passed, along with just asan particle_storm and an additional ASan build with DEBUG_COUNTS=true. Normal startup (two captures), enabled movement/resize run (five captures), and enabled ASan resize/restore all rendered and exited 0. The enabled native debug log is now empty, where KI-020-counts had reported 40 live-object messages. An isolated zero-byte staging descriptor produced exactly the two expected CreateBuffer errors and a clean exit before readback. Evidence: p3-fixes/KI-017/, KI-017-counts/, KI-017-asan/, and particle-count-failure/.
 
+### KI-014
+
+just check immediate_renderer and just asan immediate_renderer passed. An ASan hidden probe tested zero dimensions, 65536x65536 overflow input, oversized dimensions, maximum-size truncated input, header-only and one-byte-short payloads, plus a valid 2x2 six-face cube. All invalid inputs returned false before D3D creation; valid creation had no D3D warnings/errors. The bundled skybox rendered in an eight-capture debug mode sweep and an ASan resize/restore run, both exit 0 with clean diagnostics. Evidence: p3-fixes/KI-014/, KI-014-asan/, dds-probe-output.txt.
+
 ## Retained local evidence
 
 Artifacts are outside the repository under:
