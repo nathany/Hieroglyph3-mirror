@@ -14,7 +14,6 @@ rendering concepts remain useful; its resource and submission model is a separat
 **Reference implementations:** `odin_port/` contains the sample ports listed
 below, MirrorMirror excepted. Read the controls, accepted differences, and inherited
 limitations in [odin_port/README.md](odin_port/README.md) alongside the code.
-[VALIDATION.md](odin_port/VALIDATION.md) records test evidence and its limits.
 The suggested exercises concern what you write yourself; all ports remain available
 to study.
 

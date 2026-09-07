@@ -5,7 +5,7 @@ Odin reference implementations of the Hieroglyph3 sample applications from
 D3D11 via `vendor:directx`. Companion to
 [D3D11-Odin-Guide.md](../D3D11-Odin-Guide.md); each app follows its C++ original
 (in `../Applications/`) with the accepted differences and inherited limitations
-described below. Historical test evidence is in [VALIDATION.md](VALIDATION.md).
+described below.
 
 ## Layout
 
@@ -56,8 +56,7 @@ odin build apps/basic_application -collection:glyph=glyph -out:bin/basic_applica
 `odin run` removes its output executable after normal completion. In RenderDoc,
 launch the retained executable with API validation enabled and inspect a captured
 frame's messages and pipeline bindings. A successful capture and replay is separate
-evidence from merely having RenderDoc installed. See [VALIDATION.md](VALIDATION.md)
-for the tooling checks actually performed.
+evidence from merely having RenderDoc installed.
 
 Data files (shaders, textures, models) load from the repo's
 `../Applications/Data` tree — the path is baked in at compile time from the
