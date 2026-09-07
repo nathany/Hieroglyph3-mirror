@@ -112,7 +112,7 @@ Where a demo shows live state (tessellation factors, active modes), it goes in t
 | `interlocking_terrain_tiles` | Applications/InterlockingTerrainTiles | 9 | `W` wireframe · `L` hull-shader complexity · `D` shading mode (solid / shaded / LOD debug) · `A` automated camera | Simple/complex LOD and shading verified |
 | `light_prepass` | Applications/LightPrepass | 11 | camera; `N` cycles light mode | ✅ MSAA deferred lighting |
 | `deferred_rendering` | Applications/DeferredRendering | 11 | camera; `V` display · `N` light mode · `K` G-buffer opt · `O` light opt · `M` anti-aliasing | ✅ V/N/K/O/M toggles |
-| `water_simulation` | Applications/WaterSimulationI | 12 | camera | Simulation runs; camera/feature-level departures remain |
+| `water_simulation` | Applications/WaterSimulationI | 12 | camera | ✅ FL10/SM4 simulation and reference camera |
 | `particle_storm` | Applications/ParticleStorm | 12 | camera | Simulation runs; startup camera differs |
 
 ### basic_window
@@ -325,7 +325,8 @@ thousands of FPS the waves flatten within a couple of seconds — the C++
 behaves the same way, just at its own frame rate. The camera starts at
 (-100, 30.5, -100), matching C++: its spatial controller replaces the default
 node translation rather than adding it (KI-006 fixed).
-The port also requests FL11/SM5 rather than the reference's FL10/SM4 (KI-005).
+The port requests FL10 and SM4 like C++. It checks optional downlevel compute
+and structured-buffer support and exits with a clear error if unavailable.
 The C++'s unused "FinalColor" parameter is omitted.
 
 ### particle_storm

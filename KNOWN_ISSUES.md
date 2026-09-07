@@ -10,8 +10,8 @@ See [validation records](odin_port/VALIDATION.md) for coverage and limitations.
 
 The five issues prioritized P2 for the current supported demos are now fixed:
 KI-019, KI-002, KI-004, KI-008, and KI-003. Each was verified and committed
-separately. KI-005 remains P3 under the current hardware scope; its conditional
-P2 priority applies if FL10 support is made a requirement. ✅ denotes a verified fix.
+separately. KI-005's FL10/SM4 path is also restored and verified on the local GPU.
+✅ denotes a verified fix.
 
 The executable C++ applications, their helpers, and the dependency versions used
 here are the behavioral reference. An inherited problem is still real, but fixing
@@ -35,7 +35,7 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 | KI-003 | Skin camera and resize | ✅ Fixed port omission | P2 | Moderate local input/resize addition |
 | KI-004 | Cone apex normals | ✅ Fixed semantic translation defect | P2 | `normalize0`; preserves reference zero input |
 | KI-008 | Failed swap-chain resize | ✅ Fixed port failure-path defect | P2 | Return failure and stop cleanly; recovery optional |
-| KI-005 | Water feature level/profiles | Confirmed compatibility departure | P3; P2 if FL10 is required | Restore profiles and feature level together |
+| KI-005 | Water feature level/profiles | ✅ Fixed compatibility departure | P3; P2 if FL10 is required | Restore profiles and feature level together |
 | KI-006 | Particle/water cameras | ✅ Fixed port fidelity defect | P3 | Two translations and their explanations |
 | KI-011 | Skin anisotropy | ✅ Fixed port fidelity defect | P3 | Set reference value 16 |
 | KI-012 | Partial initialization | Confirmed ownership defects | P3 | Consistent cleanup; no normal-path change |
@@ -196,7 +196,11 @@ occurred outside the deliberate failure probes.
 
 ### KI-005 — WaterSimulation requires a higher feature level than the reference
 
-- [ ] Restore feature level 10 and shader-model 4 profiles together.
+- [x] ✅ Restore feature level 10 and shader-model 4 profiles together.
+
+**Verified fix:** WaterSimulation now requests FL10 and compiles CS/VS/PS at SM4, matching the reference. It checks optional downlevel compute/structured-buffer support and reports an unavailable capability before scene creation. Shaders and simulation stages are unchanged.
+
+Original finding (before the fix):
 
 The port [compiles SM5](odin_port/apps/water_simulation/main.odin#L311) and
 [requests FL11](odin_port/apps/water_simulation/main.odin#L459). The reference

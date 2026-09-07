@@ -537,6 +537,10 @@ structured buffers + `DrawInstancedIndirect`, i.e. GPU-driven particle count wit
 CPU readback — the most "modern GPU" technique in the book. Both are compute-first;
 ch. 5 + 10 prepare you fully.
 
+Water uses FL10 and SM4, including optional compute and structured-buffer
+support. Check `D3D10_X_HARDWARE_OPTIONS` before constructing its scene; an FL10
+device alone does not establish that capability. ParticleStorm uses FL11/SM5.
+
 ### Chapter 11 — Deferred Rendering (biggest lift)
 
 G-buffer via multiple render targets, then screen-space light accumulation; the

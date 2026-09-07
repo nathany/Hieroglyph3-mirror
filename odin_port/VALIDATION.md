@@ -294,6 +294,10 @@ just check immediate_renderer and just asan immediate_renderer passed. An ASan h
 
 `just check image_processor` and `just asan image_processor` passed. Fourteen debugger-backed captures covered all five images/algorithms, sampler, pan/zoom and resize; the standalone ASan run covered startup/resize/restore. Both exited normally with no diagnostics, and startup output was visually inspected. Two isolated app copies injected failure after texture/SRV acquisition in the first or second replacement target; both printed the expected error, exited normally and produced no debug-layer or live-object warnings. Evidence: `p3-fixes/KI-010/`, `KI-010-asan/`, and `image-replacement-failure-{3,4}/`.
 
+### KI-005
+
+`just check water_simulation` passed. A hidden probe confirmed GetFeatureLevel == FL10_0, the optional compute/structured-buffer capability, successful SM4 shader compilation and actual scene creation without D3D warnings/errors. The real demo passed five debugger-backed startup/camera/resize/restore captures, exited normally and emitted no diagnostics; the wireframe water output was visually inspected. This establishes the FL10 device path on the installed AMD GPU, not compatibility with every historical FL10 adapter. Microsoft documents the optional capability and structured SRVs across shader stages in [Compute Shaders on Downlevel Hardware](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-downlevel-compute-shaders). Evidence: `p3-fixes/KI-005/`, `water-fl10-probe/`, and `water-fl10-probe-output.txt`.
+
 ## Retained local evidence
 
 Artifacts are outside the repository under:

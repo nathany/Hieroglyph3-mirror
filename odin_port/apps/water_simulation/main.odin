@@ -25,10 +25,8 @@
 // (0.307, 0.707). Right-drag look, W/S/A/D/Q/E move, Ctrl sprint, Esc quits,
 // Space screenshots, resize supported.
 //
-// The C++ requests feature level 10_0 and cs_4_0; here it's 11_0 and _5_0
-// targets like the other ports (the shader uses nothing 11-specific). The
-// app also initializes a "FinalColor" shader parameter that no shader in the
-// demo references — omitted.
+// Like C++, this requests FL10 and SM4, including optional downlevel compute
+// and structured-buffer support. The unused "FinalColor" parameter is omitted.
 package main
 
 import "core:fmt"
@@ -307,11 +305,11 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	device := r.device
 
 	// Shaders.
-	sim_cs_blob := shader.compile("WaterSimulation.hlsl", "CSMAIN", "cs_5_0") or_return
+	sim_cs_blob := shader.compile("WaterSimulation.hlsl", "CSMAIN", "cs_4_0") or_return
 	defer sim_cs_blob->Release()
-	plane_vs_blob := shader.compile("HeightmapVisualization.hlsl", "VSMAIN", "vs_5_0") or_return
+	plane_vs_blob := shader.compile("HeightmapVisualization.hlsl", "VSMAIN", "vs_4_0") or_return
 	defer plane_vs_blob->Release()
-	plane_ps_blob := shader.compile("HeightmapVisualization.hlsl", "PSMAIN", "ps_5_0") or_return
+	plane_ps_blob := shader.compile("HeightmapVisualization.hlsl", "PSMAIN", "ps_4_0") or_return
 	defer plane_ps_blob->Release()
 
 	if device->CreateComputeShader(sim_cs_blob->GetBufferPointer(), sim_cs_blob->GetBufferSize(), nil, &s.sim_cs) < 0 {return}
@@ -455,7 +453,7 @@ main :: proc() {
 	window.initialize(&win, &handler)
 	defer window.shutdown(&win)
 
-	r, renderer_ok := renderer.create(win.hwnd, WIDTH, HEIGHT, ._11_0)
+	r, renderer_ok := renderer.create(win.hwnd, WIDTH, HEIGHT, ._10_0)
 	if !renderer_ok {
 		win32.ShowWindow(win.hwnd, win32.SW_HIDE)
 		win32.MessageBoxW(
@@ -467,6 +465,14 @@ main :: proc() {
 		return
 	}
 	defer renderer.destroy(&r)
+
+	// Compute/structured buffers are optional on FL10 hardware.
+	options: d3d11.FEATURE_DATA_D3D10_X_HARDWARE_OPTIONS
+	if r.device->CheckFeatureSupport(.D3D10_X_HARDWARE_OPTIONS, &options, size_of(options)) < 0 ||
+	   !options.ComputeShaders_Plus_RawAndStructuredBuffers_Via_Shader_4_x {
+		fmt.eprintln("WaterSimulation requires FL10 compute and structured-buffer support")
+		return
+	}
 
 	scene, scene_ok := setup(&r)
 	depth, depth_ok := depth_create(r.device, WIDTH, HEIGHT)
