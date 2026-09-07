@@ -5,10 +5,12 @@ The original visual baseline used source revision `9a91a68`; the subsequent
 documentation commit `b1cf63b` did not change demo code. The KI-001 results below
 cover the factory-chain correction to that code.
 
-**Result:** the instrumentation works, and KI-001 passed the checks below with
-no observed new visual regression. The baseline still contains known defects;
-successful startup and normal exit do not mean every rendering mode is correct.
-See [KNOWN_ISSUES.md](../KNOWN_ISSUES.md) for classifications and repair scope.
+**Current result:** instrumentation is working; KI-001, all five P2 issues and
+all thirteen P3 issues have verified fixes. The original baseline and intermediate
+checkpoints below preserve what was observed before each repair. LightPrepass's
+mask-pass warning and CurvedPN's adaptive-topology diagnostic remain documented
+inherited behavior; they are not newly introduced regressions. See
+[KNOWN_ISSUES.md](../KNOWN_ISSUES.md) for classifications and repair scope.
 
 ## Original visual baseline
 
@@ -310,6 +312,10 @@ just check immediate_renderer and just asan immediate_renderer passed. An ASan h
 
 `just verify` passed. All 14 demos passed debugger-backed startup runs (only the retained LightPrepass mask warning); `just asan basic_application` and standalone resize/restore passed. An ASan probe exercised success, nine synthetic early returns after successive acquisitions, and a real CreateSwapChain failure with a null HWND. Every failure returned an empty renderer before caller destruction; live-object reports showed only the intentionally retained diagnostic device. The probe caught Odin's return-before-defer copy behavior, prompting a separate local construction value; `just verify` passed again after that correction. Evidence: `p3-fixes/KI-012-renderer/`, `KI-012-renderer-asan/`, `renderer-ownership-probe/`, and `renderer-ownership-output.txt`.
 
+### KI-012
+
+`just verify` passed all 15 checks and eight tracked math tests. All 13 changed samples passed debugger-backed startup; only LightPrepass's retained mask warning appeared. `just asan deferred_rendering`, `just asan image_processor`, and `just asan curved_pn_triangles` builds and standalone resize/restore runs passed. Isolated ASan probes passed 38 successful/failed constructor cases across all 13 samples, including nested patch/target/lookup failures and four Deferred shader-compilation failure positions. Each failed result was empty before caller destruction; real D3D live-object reports retained only diagnostic devices, wrapped compiler-blob reference counts returned to zero, and tracked Odin heap storage returned to zero. Ten tests exercised both failure orders in the five actual copied startup sibling blocks. Three malformed PLY fixtures failed after array allocation without leaks. Failure gates were synthetic early returns/failed conditions, not simulated GPU exhaustion. A separate read-only review found no correctness issue. Evidence: `p3-fixes/KI-012-samples/`, `KI-012-samples-asan/`, `sample-ownership-probes/`, `sibling-ownership-probes/`, `ply-ownership-probe/`, and `ply-ownership-output.txt`.
+
 ## Retained local evidence
 
 Artifacts are outside the repository under:
@@ -324,6 +330,12 @@ Artifacts are outside the repository under:
   debugger and launch scripts; retained `before/` and `after/` binaries, hashes and
   captures; diagnostic `summary.json`; `inherited-check/` reproducing curved PN's
   error with the old binary; and `asan-standalone/` results.
+- `p2-fixes/`: per-issue demo captures, debug logs, sanitizer runs and targeted
+  shader, terrain, input and resize-failure probes.
+- `p3-fixes/`: per-issue retained binaries, screen-client captures and native
+  debug logs; ASan runs; parser, feature-level, constrained-window, allocator,
+  resource-failure and compiler-blob ownership probes. Final `just verify` passed;
+  documentation checks passed 74 local links, line bounds and code fences.
 
 These local artifacts are not distributed with the repository. This document
 retains the conclusions and limits; the local scripts/logs retain the exact actions.

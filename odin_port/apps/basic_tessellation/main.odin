@@ -135,7 +135,9 @@ write_cbuffer :: proc(ctx: ^d3d11.IDeviceContext, buffer: ^d3d11.IBuffer, value:
 	}
 }
 
-setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
+setup :: proc(r: ^renderer.Renderer) -> (result: Scene, ok: bool) {
+	s: Scene
+	defer if !ok {scene_destroy(&s)}
 	device := r.device
 
 	// All four stages from the one file, as the C++ LoadShader calls do.

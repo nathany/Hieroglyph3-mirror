@@ -113,7 +113,7 @@ Where a demo shows live state (tessellation factors, active modes), it goes in t
 | `light_prepass` | Applications/LightPrepass | 11 | camera; `N` cycles light mode | ✅ MSAA deferred lighting |
 | `deferred_rendering` | Applications/DeferredRendering | 11 | camera; `V` display · `N` light mode · `K` G-buffer opt · `O` light opt · `M` anti-aliasing | ✅ V/N/K/O/M toggles |
 | `water_simulation` | Applications/WaterSimulationI | 12 | camera | ✅ FL10/SM4 simulation and reference camera |
-| `particle_storm` | Applications/ParticleStorm | 12 | camera | Simulation runs; startup camera differs |
+| `particle_storm` | Applications/ParticleStorm | 12 | camera | ✅ reference camera and clean optional count readback |
 
 Rendering samples request the sizes listed below, then use the actual created
 client size for the swap chain, shared depth/viewport, and dependent window-sized
@@ -384,7 +384,9 @@ a circling point light driving the engine's UE4-style PBR shaders, used
 unchanged. First-person camera (right-drag look, W/A/S/D/Q/E, Ctrl sprint),
 keys 1/2/3 off-center projections (`glyph:d3d_math`'s
 `perspective_off_center_lh`), live swap-chain resize (`glyph:renderer`'s
-`resize`), Esc/Space as usual.
+`resize`), Esc/Space as usual. A failed dynamic mesh allocation or upload now
+reports an error and exits before drawing incomplete geometry; this improves
+the reference's unchecked failure path without adding recovery machinery.
 
 ### image_processor
 

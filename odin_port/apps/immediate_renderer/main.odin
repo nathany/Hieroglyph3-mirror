@@ -271,7 +271,9 @@ immutable_buffer :: proc(device: ^d3d11.IDevice, data: rawptr, byte_width: u32, 
 	return buffer, true
 }
 
-create_pipeline :: proc(r: ^renderer.Renderer) -> (p: Pipeline, ok: bool) {
+create_pipeline :: proc(r: ^renderer.Renderer) -> (result: Pipeline, ok: bool) {
+	p: Pipeline
+	defer if !ok {pipeline_destroy(&p)}
 	device := r.device
 
 	// The material-template shader pairs, used unchanged (see

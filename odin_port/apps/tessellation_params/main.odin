@@ -229,9 +229,11 @@ create_patch :: proc(
 	hs_entry, ds_entry: string,
 	topology: d3d11.PRIMITIVE_TOPOLOGY,
 ) -> (
-	p: Patch,
+	result: Patch,
 	ok: bool,
 ) {
+	p: Patch
+	defer if !ok {patch_destroy(&p)}
 	// One hull shader per partitioning mode, selected by a preprocessor
 	// define — the [partitioning(...)] attribute can't be set at runtime.
 	// hs_entry is only the CONTROL-POINT phase (a pass-through, run once per
@@ -267,7 +269,9 @@ create_patch :: proc(
 	return p, true
 }
 
-setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
+setup :: proc(r: ^renderer.Renderer) -> (result: Scene, ok: bool) {
+	s: Scene
+	defer if !ok {scene_destroy(&s)}
 	device := r.device
 
 	vs_blob := shader.compile("TessellationParameters.hlsl", "vsMain", "vs_5_0") or_return

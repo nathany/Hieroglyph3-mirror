@@ -304,7 +304,8 @@ targets_destroy :: proc(t: ^Targets) {
 	t^ = {}
 }
 
-targets_create :: proc(device: ^d3d11.IDevice, width, height: u32) -> (t: Targets, ok: bool) {
+targets_create :: proc(device: ^d3d11.IDevice, width, height: u32) -> (result: Targets, ok: bool) {
+	t: Targets
 	defer if !ok {targets_destroy(&t)}
 
 	color_desc := d3d11.TEXTURE2D_DESC {
@@ -513,7 +514,9 @@ write_cbuffer :: proc(ctx: ^d3d11.IDeviceContext, buffer: ^d3d11.IBuffer, value:
 	}
 }
 
-setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
+setup :: proc(r: ^renderer.Renderer) -> (result: Scene, ok: bool) {
+	s: Scene
+	defer if !ok {scene_destroy(&s)}
 	device := r.device
 
 	// Shaders — all vs_5_0/ps_5_0 as in the C++, only the point-light
@@ -831,7 +834,9 @@ main :: proc() {
 	defer renderer.destroy(&r)
 
 	scene, scene_ok := setup(&r)
+	defer scene_destroy(&scene)
 	targets, targets_ok := targets_create(r.device, r.width, r.height)
+	defer targets_destroy(&targets)
 	if !scene_ok || !targets_ok {
 		win32.MessageBoxW(
 			nil,
@@ -841,8 +846,6 @@ main :: proc() {
 		)
 		return
 	}
-	defer scene_destroy(&scene)
-	defer targets_destroy(&targets)
 
 	// FirstPersonCamera at rotation (0.407, -0.707, 0), position (4, 4.5, -4).
 	cam := Fp_Camera {

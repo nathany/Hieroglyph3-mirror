@@ -259,7 +259,9 @@ write_cbuffer :: proc(ctx: ^d3d11.IDeviceContext, buffer: ^d3d11.IBuffer, value:
 	}
 }
 
-setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
+setup :: proc(r: ^renderer.Renderer) -> (result: Scene, ok: bool) {
+	s: Scene
+	defer if !ok {scene_destroy(&s)}
 	device := r.device
 
 	// Shaders. The tessellated set is SM 5.0 (HS/DS); the rest 4.0-class.

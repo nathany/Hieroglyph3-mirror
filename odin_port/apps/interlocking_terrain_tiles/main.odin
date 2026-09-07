@@ -182,7 +182,9 @@ write_cbuffer :: proc(ctx: ^d3d11.IDeviceContext, buffer: ^d3d11.IBuffer, value:
 // CreateComputeShaderResources + RunComputeShader: one 16x16 group summarizes
 // each tile's height samples into a plane normal and deviation for hsComplex.
 // Only the lookup texture/SRV survive this one-time prepass.
-create_lod_lookup :: proc(r: ^renderer.Renderer, height_texture: ^d3d11.ITexture2D, height_srv: ^d3d11.IShaderResourceView) -> (texture: ^d3d11.ITexture2D, srv: ^d3d11.IShaderResourceView, ok: bool) {
+create_lod_lookup :: proc(r: ^renderer.Renderer, height_texture: ^d3d11.ITexture2D, height_srv: ^d3d11.IShaderResourceView) -> (result_texture: ^d3d11.ITexture2D, result_srv: ^d3d11.IShaderResourceView, ok: bool) {
+	texture: ^d3d11.ITexture2D
+	srv: ^d3d11.IShaderResourceView
 	height_desc: d3d11.TEXTURE2D_DESC
 	height_texture->GetDesc(&height_desc)
 	// The supplied shader maps one group to one of the fixed 32x32 tiles.
@@ -229,7 +231,9 @@ create_lod_lookup :: proc(r: ^renderer.Renderer, height_texture: ^d3d11.ITexture
 	return texture, srv, true
 }
 
-setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
+setup :: proc(r: ^renderer.Renderer) -> (result: Scene, ok: bool) {
+	s: Scene
+	defer if !ok {scene_destroy(&s)}
 	device := r.device
 
 	vs_blob := shader.compile("InterlockingTerrainTiles.hlsl", "vsMain", "vs_5_0") or_return

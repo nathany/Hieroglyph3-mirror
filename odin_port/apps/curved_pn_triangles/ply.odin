@@ -26,9 +26,12 @@ Ply_Mesh :: struct {
 ply_destroy :: proc(m: ^Ply_Mesh) {
 	delete(m.vertices)
 	delete(m.indices)
+	m^ = {}
 }
 
-ply_load :: proc(filename: string) -> (mesh: Ply_Mesh, ok: bool) {
+ply_load :: proc(filename: string) -> (result: Ply_Mesh, ok: bool) {
+	mesh: Ply_Mesh
+	defer if !ok {ply_destroy(&mesh)}
 	path, found := paths.find_data_file("Models", filename)
 	if !found {
 		fmt.eprintln("model not found:", filename)

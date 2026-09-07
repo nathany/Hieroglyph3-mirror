@@ -200,6 +200,13 @@ take that route.
    Register `defer obj->Release()` immediately after acquiring a local interface,
    and release stored interfaces in your shutdown proc. A constructor must also
    release partial results when a later step fails.
+   Odin copies return values before running defers. Build a scene in a separate
+   local `s`, leave the named `result` empty, and use
+   `defer if !ok {scene_destroy(&s)}`. Return `s, true` only after construction
+   succeeds. A bare failure return then transfers no handles. Cleaning a named
+   return value in a defer would leave stale handles in the already copied result.
+   When constructing a pair of resources, register each caller cleanup before
+   checking the pair's success so a successful sibling cannot leak.
 
 2. **Debug layer from day one.** `D3D11.CREATE_DEVICE_FLAGS{.DEBUG}` when creating the
    device (in debug builds). Read its messages in a native debugger's output window

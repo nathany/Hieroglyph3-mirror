@@ -255,7 +255,9 @@ write_cbuffer :: proc(ctx: ^d3d11.IDeviceContext, buffer: ^d3d11.IBuffer, value:
 	}
 }
 
-setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
+setup :: proc(r: ^renderer.Renderer) -> (result: Scene, ok: bool) {
+	s: Scene
+	defer if !ok {scene_destroy(&s)}
 	device := r.device
 
 	// Shaders.
@@ -464,7 +466,9 @@ main :: proc() {
 	defer renderer.destroy(&r)
 
 	scene, scene_ok := setup(&r)
+	defer scene_destroy(&scene)
 	depth, depth_ok := depth_create(r.device, r.width, r.height)
+	defer depth_destroy(&depth)
 	if !scene_ok || !depth_ok {
 		win32.MessageBoxW(
 			nil,
@@ -474,8 +478,6 @@ main :: proc() {
 		)
 		return
 	}
-	defer scene_destroy(&scene)
-	defer depth_destroy(&depth)
 
 	// The optional readback buffer belongs to this run, like the C++ renderer
 	// resource. Check it before the loop; normal builds leave it nil.

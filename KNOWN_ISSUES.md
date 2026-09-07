@@ -8,10 +8,11 @@ but selected controls and visual comparisons exposed the defects below, includin
 KI-019. Successful startup is not a clean visual or API-validation result.
 See [validation records](odin_port/VALIDATION.md) for coverage and limitations.
 
-The five issues prioritized P2 for the current supported demos are now fixed:
-KI-019, KI-002, KI-004, KI-008, and KI-003. Each was verified and committed
-separately. KI-005's FL10/SM4 path is also restored and verified on the local GPU.
-✅ denotes a verified fix.
+KI-001, all five P2 issues, and all thirteen P3 issues are now fixed and verified.
+Each semantic fix was committed after its relevant checks; KI-012 was split into
+shared-renderer and sample-ownership commits. KI-007 remains disproved as a port
+regression. ✅ denotes a verified fix. Historical findings and checkpoint results
+below are retained to explain the evidence and intentional departures.
 
 The executable C++ applications, their helpers, and the dependency versions used
 here are the behavioral reference. An inherited problem is still real, but fixing
@@ -38,7 +39,7 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 | KI-005 | Water feature level/profiles | ✅ Fixed compatibility departure | P3; P2 if FL10 is required | Restore profiles and feature level together |
 | KI-006 | Particle/water cameras | ✅ Fixed port fidelity defect | P3 | Two translations and their explanations |
 | KI-011 | Skin anisotropy | ✅ Fixed port fidelity defect | P3 | Set reference value 16 |
-| KI-012 | Partial initialization | Confirmed ownership defects | P3 | Consistent cleanup; no normal-path change |
+| KI-012 | Partial initialization | ✅ Fixed ownership defects | P3 | Consistent cleanup; no normal-path change |
 | KI-013 | Terrain requested resolution | ✅ Fixed port fidelity defect | P3 | Restore 1024x768 |
 | KI-014 | DDS size arithmetic | ✅ Fixed input-hardening issue | P3 | Bound dimensions and validate wide sizes |
 | KI-015 | Temporary allocations | ✅ Fixed Odin lifetime issue | P3 | Scope/reset scratch allocations |
@@ -80,7 +81,7 @@ Validation confirmed matching canonical factory identities for the actual device
 and swap chain, clean probe initialization/teardown diagnostics, all 15 compiler
 checks and eight math tests, 14 rendering demo runs, and two ASan executions.
 Known baseline diagnostics remain; see [the validation record](odin_port/VALIDATION.md).
-Partial-initialization cleanup remains separate work under KI-012.
+Partial-initialization cleanup was completed separately under KI-012.
 
 ### KI-002 — Complex interlocking-terrain LOD is nonfunctional
 
@@ -246,9 +247,11 @@ chain: KI-007 establishes that the reference PNG loader also creates one mip.
 
 ### KI-012 — Failed initialization leaks owned resources
 
-- [x] ✅ Shared renderer construction cleans all acquired resources and returns an empty failure result. Sample ownership remains in progress.
+- [x] ✅ Establish consistent partial-result and local-resource cleanup.
 
-- [ ] Establish consistent partial-result and local-resource cleanup.
+**Verified fix:** Shared renderer, all scene/pipeline constructors, nested targets/patches and PLY loading now clean failed construction. They build in separate locals and return empty failure results because Odin copies return values before defers execute. Existing Light/Deferred target and terrain lookup guards were corrected for that same stale-handle hazard. Deferred shader blobs use immediate cleanup and explicit retained references; all five startup sibling groups install cleanup before combined checks. Completed in separate renderer and sample ownership commits.
+
+Original finding (before the fix):
 
 Representative paths include [renderer creation](odin_port/glyph/renderer/renderer.odin#L94)
 and [SkinAndBones setup](odin_port/apps/skin_and_bones/main.odin#L262). They acquire
@@ -398,7 +401,7 @@ No constrained-desktop runtime reproduction was performed during this audit.
 
 - [x] ✅ Explicitly unbind the priming UAVs before the next pass.
 
-**Verified fix:** Both priming UAV slots are explicitly unbound after dispatch. The normal run is debug-clean; DEBUG_COUNTS has no UAV hazard and live counts grow, but still reports the KI-017 live-object leak.
+**Verified fix:** Both priming UAV slots are explicitly unbound after dispatch. The normal and DEBUG_COUNTS runs have no UAV hazard and live counts grow. The counter-build leak observed at this checkpoint was subsequently fixed by KI-017.
 
 Original finding (before the fix):
 
@@ -577,4 +580,6 @@ That baseline requested the D3D debug layer but did not collect its messages.
 Subsequent probes verified the debug flag, interfaces, deliberate diagnostic,
 native message collection, and live-object reporting before KI-001 was changed.
 Those runs identified KI-020. KI-001 then passed the post-change checks described
-in [VALIDATION.md](odin_port/VALIDATION.md); the remaining issues were left unfixed.
+in [VALIDATION.md](odin_port/VALIDATION.md); the remaining issues were left unfixed
+at that checkpoint. The later P2/P3 sections in the validation record document
+their completed fixes.

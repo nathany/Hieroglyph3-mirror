@@ -102,7 +102,9 @@ scene_destroy :: proc(s: ^Scene) {
 
 g_step: string // DIAG: last step attempted, shown in the failure box
 
-setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
+setup :: proc(r: ^renderer.Renderer) -> (result: Scene, ok: bool) {
+	s: Scene
+	defer if !ok {scene_destroy(&s)}
 	device := r.device
 
 	// Shaders — same file, entry points, and shader-model targets as the

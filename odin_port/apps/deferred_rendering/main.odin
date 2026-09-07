@@ -340,7 +340,9 @@ Color_Target :: struct {
 	srv: ^d3d11.IShaderResourceView,
 }
 
-color_target_create :: proc(device: ^d3d11.IDevice, width, height: u32, format: dxgi.FORMAT, samples: u32) -> (t: Color_Target, ok: bool) {
+color_target_create :: proc(device: ^d3d11.IDevice, width, height: u32, format: dxgi.FORMAT, samples: u32) -> (result: Color_Target, ok: bool) {
+	t: Color_Target
+	defer if !ok {color_target_destroy(&t)}
 	desc := d3d11.TEXTURE2D_DESC {
 		Width      = width,
 		Height     = height,
@@ -396,7 +398,8 @@ targets_destroy :: proc(t: ^Targets) {
 	t^ = {}
 }
 
-targets_create :: proc(device: ^d3d11.IDevice, width, height: u32) -> (t: Targets, ok: bool) {
+targets_create :: proc(device: ^d3d11.IDevice, width, height: u32) -> (result: Targets, ok: bool) {
+	t: Targets
 	defer if !ok {targets_destroy(&t)}
 
 	for mode in AA_Mode {
@@ -670,7 +673,9 @@ immutable_buffer :: proc(device: ^d3d11.IDevice, data: rawptr, byte_width: u32, 
 	return buffer, true
 }
 
-setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
+setup :: proc(r: ^renderer.Renderer) -> (result: Scene, ok: bool) {
+	s: Scene
+	defer if !ok {scene_destroy(&s)}
 	device := r.device
 
 	// G-Buffer shader pairs (K toggles between them).
@@ -679,23 +684,25 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 		.Enabled  = {"VSMainOptimized", "PSMainOptimized"},
 	}
 	first_vs_blob: ^d3dc.ID3DBlob // kept for input-layout creation
+	defer if first_vs_blob != nil {first_vs_blob->Release()}
 	for entries, opt in gbuffer_entries {
 		vs_blob := shader.compile("GBuffer.hlsl", entries[0], "vs_5_0") or_return
+		defer vs_blob->Release()
 		ps_blob := shader.compile("GBuffer.hlsl", entries[1], "ps_5_0") or_return
 		defer ps_blob->Release()
 		if device->CreateVertexShader(vs_blob->GetBufferPointer(), vs_blob->GetBufferSize(), nil, &s.gbuffer_vs[opt]) < 0 {return}
 		if device->CreatePixelShader(ps_blob->GetBufferPointer(), ps_blob->GetBufferSize(), nil, &s.gbuffer_ps[opt]) < 0 {return}
 		if opt == .Disabled {
-			first_vs_blob = vs_blob // released below, after layout creation
-		} else {
-			vs_blob->Release()
+			first_vs_blob = vs_blob
+			first_vs_blob->AddRef() // separate ownership for the later input layout
 		}
 	}
-	defer first_vs_blob->Release()
 
 	// Point-light shader permutations: [gbuffer opt][volumes][msaa], with
 	// only the enabled flags defined (an undefined identifier is 0 in #if).
 	quad_vs_blob, volume_vs_blob: ^d3dc.ID3DBlob
+	defer if quad_vs_blob != nil {quad_vs_blob->Release()}
+	defer if volume_vs_blob != nil {volume_vs_blob->Release()}
 	for opt in Gbuf_Opt {
 		for volumes in 0 ..< 2 {
 			for msaa in 0 ..< 2 {
@@ -710,16 +717,15 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 				if msaa == 1 {append(&defines, "MSAA")}
 
 				vs_blob := shader.compile_defines("Lights.hlsl", "VSMain", "vs_5_0", defines[:]) or_return
+				defer vs_blob->Release()
 				ps_blob := shader.compile_defines("Lights.hlsl", "PSMain", "ps_5_0", defines[:]) or_return
 				defer ps_blob->Release()
 
 				effect := &s.light_effects[opt][volumes][msaa]
 				if device->CreateVertexShader(vs_blob->GetBufferPointer(), vs_blob->GetBufferSize(), nil, &effect.vs) < 0 {
-					vs_blob->Release()
 					return
 				}
 				if device->CreatePixelShader(ps_blob->GetBufferPointer(), ps_blob->GetBufferSize(), nil, &effect.ps) < 0 {
-					vs_blob->Release()
 					return
 				}
 
@@ -727,18 +733,15 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 				if opt == .Disabled && msaa == 0 {
 					if volumes == 0 {
 						quad_vs_blob = vs_blob
-						continue
+						quad_vs_blob->AddRef()
 					} else {
 						volume_vs_blob = vs_blob
-						continue
+						volume_vs_blob->AddRef()
 					}
 				}
-				vs_blob->Release()
 			}
 		}
 	}
-	defer quad_vs_blob->Release()
-	defer volume_vs_blob->Release()
 
 	blit_vs_blob := shader.compile_source(BLIT_HLSL, "blit", "VSMain", "vs_5_0", nil) or_return
 	defer blit_vs_blob->Release()
@@ -1011,7 +1014,9 @@ main :: proc() {
 	defer renderer.destroy(&r)
 
 	scene, scene_ok := setup(&r)
+	defer scene_destroy(&scene)
 	targets, targets_ok := targets_create(r.device, r.width, r.height)
+	defer targets_destroy(&targets)
 	if !scene_ok || !targets_ok {
 		win32.MessageBoxW(
 			nil,
@@ -1021,8 +1026,6 @@ main :: proc() {
 		)
 		return
 	}
-	defer scene_destroy(&scene)
-	defer targets_destroy(&targets)
 
 	cam := Fp_Camera {
 		position = {4, 4.5, -4},

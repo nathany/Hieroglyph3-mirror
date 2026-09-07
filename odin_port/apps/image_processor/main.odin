@@ -165,7 +165,9 @@ filter_target_destroy :: proc(t: ^Filter_Target) {
 	t^ = {}
 }
 
-create_filter_target :: proc(r: ^renderer.Renderer, width, height: u32) -> (t: Filter_Target, ok: bool) {
+create_filter_target :: proc(r: ^renderer.Renderer, width, height: u32) -> (result: Filter_Target, ok: bool) {
+	t: Filter_Target
+	defer if !ok {filter_target_destroy(&t)}
 	desc := d3d11.TEXTURE2D_DESC {
 		Width      = width,
 		Height     = height,
@@ -231,7 +233,9 @@ create_compute :: proc(device: ^d3d11.IDevice, file, entry: string) -> (cs: ^d3d
 	return cs, true
 }
 
-create_pipeline :: proc(r: ^renderer.Renderer) -> (p: Pipeline, ok: bool) {
+create_pipeline :: proc(r: ^renderer.Renderer) -> (result: Pipeline, ok: bool) {
+	p: Pipeline
+	defer if !ok {pipeline_destroy(&p)}
 	device := r.device
 
 	// The chapter's optimization progression, all producing the same 7x7
@@ -422,12 +426,12 @@ main :: proc() {
 	sampler_index := 0
 
 	intermediate, im_ok := create_filter_target(&r, images[0].width, images[0].height)
+	defer filter_target_destroy(&intermediate)
 	output, out_ok := create_filter_target(&r, images[0].width, images[0].height)
+	defer filter_target_destroy(&output)
 	if !im_ok || !out_ok {
 		return
 	}
-	defer filter_target_destroy(&intermediate)
-	defer filter_target_destroy(&output)
 
 	ctx := r.ctx
 	null_srv: ^d3d11.IShaderResourceView
@@ -463,8 +467,8 @@ main :: proc() {
 			filter_target_destroy(&intermediate)
 			filter_target_destroy(&output)
 			img := &images[image_index]
-			// Improve the reference's unchecked replacement path: the existing
-			// defers release partial targets if either creation fails.
+			// Each constructor cleans a failed target; the existing defers
+			// release any successful replacement before the demo exits.
 			ok: bool
 			intermediate, ok = create_filter_target(&r, img.width, img.height)
 			if !ok {fmt.eprintln("Failed to replace intermediate filter target"); return}

@@ -90,7 +90,9 @@ scene_destroy :: proc(s: ^Scene) {
 	s^ = {}
 }
 
-setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
+setup :: proc(r: ^renderer.Renderer) -> (result: Scene, ok: bool) {
+	s: Scene
+	defer if !ok {scene_destroy(&s)}
 	device := r.device
 
 	// The input image, loaded as in RendererDX11::LoadTexture.

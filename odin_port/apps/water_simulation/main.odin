@@ -301,7 +301,9 @@ write_cbuffer :: proc(ctx: ^d3d11.IDeviceContext, buffer: ^d3d11.IBuffer, value:
 	}
 }
 
-setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
+setup :: proc(r: ^renderer.Renderer) -> (result: Scene, ok: bool) {
+	s: Scene
+	defer if !ok {scene_destroy(&s)}
 	device := r.device
 
 	// Shaders.
@@ -475,7 +477,9 @@ main :: proc() {
 	}
 
 	scene, scene_ok := setup(&r)
+	defer scene_destroy(&scene)
 	depth, depth_ok := depth_create(r.device, r.width, r.height)
+	defer depth_destroy(&depth)
 	if !scene_ok || !depth_ok {
 		win32.MessageBoxW(
 			nil,
@@ -485,8 +489,6 @@ main :: proc() {
 		)
 		return
 	}
-	defer scene_destroy(&scene)
-	defer depth_destroy(&depth)
 
 	// SpatialController replaces the default node translation with this pose.
 	cam := Fp_Camera {
