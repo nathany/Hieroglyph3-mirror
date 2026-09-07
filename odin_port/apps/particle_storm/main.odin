@@ -477,6 +477,23 @@ main :: proc() {
 	defer scene_destroy(&scene)
 	defer depth_destroy(&depth)
 
+	// The optional readback buffer belongs to this run, like the C++ renderer
+	// resource. Check it before the loop; normal builds leave it nil.
+	debug_staging: ^d3d11.IBuffer
+	defer if debug_staging != nil {debug_staging->Release()}
+	debug_time: f32
+	when #config(DEBUG_COUNTS, false) {
+		st_desc := d3d11.BUFFER_DESC {
+			ByteWidth = 16,
+			Usage = .STAGING,
+			CPUAccessFlags = {.READ},
+		}
+		if r.device->CreateBuffer(&st_desc, nil, &debug_staging) < 0 {
+			fmt.eprintln("failed to create particle count readback buffer")
+			return
+		}
+	}
+
 	// SpatialController replaces the default node translation with this pose.
 	cam := Fp_Camera {
 		position = {-100, 60.5, -100},
@@ -642,26 +659,16 @@ main :: proc() {
 		// flag because the Map forces a full CPU/GPU sync — exactly the stall
 		// the CopyStructureCount plumbing above exists to avoid.
 		when #config(DEBUG_COUNTS, false) {
-			@(static) staging: ^d3d11.IBuffer
-			if staging == nil {
-				st_desc := d3d11.BUFFER_DESC {
-					ByteWidth      = 16,
-					Usage          = .STAGING,
-					CPUAccessFlags = {.READ},
-				}
-				r.device->CreateBuffer(&st_desc, nil, &staging)
-			}
-			@(static) debug_time: f32
 			debug_time += dt
 			if debug_time >= 1.0 {
 				debug_time = 0
-				ctx->CopyStructureCount(staging, 0, scene.particle_uav[current])
-				ctx->CopyStructureCount(staging, 4, scene.particle_uav[next])
+				ctx->CopyStructureCount(debug_staging, 0, scene.particle_uav[current])
+				ctx->CopyStructureCount(debug_staging, 4, scene.particle_uav[next])
 				mapped_dbg: d3d11.MAPPED_SUBRESOURCE
-				if ctx->Map((^d3d11.IResource)(staging), 0, .READ, {}, &mapped_dbg) >= 0 {
+				if ctx->Map((^d3d11.IResource)(debug_staging), 0, .READ, {}, &mapped_dbg) >= 0 {
 					counts := ([^]u32)(mapped_dbg.pData)
 					fmt.printfln("current=%v next=%v", counts[0], counts[1])
-					ctx->Unmap((^d3d11.IResource)(staging), 0)
+					ctx->Unmap((^d3d11.IResource)(debug_staging), 0)
 				}
 			}
 		}

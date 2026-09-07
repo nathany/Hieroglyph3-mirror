@@ -43,7 +43,7 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 | KI-014 | DDS size arithmetic | Confirmed input-hardening issue | P3 | Bound dimensions and validate wide sizes |
 | KI-015 | Temporary allocations | Confirmed Odin lifetime issue | P3 | Scope/reset scratch allocations |
 | KI-016 | MS3D count reads | Confirmed input-hardening issue | P3 | Two explicit bounds checks |
-| KI-017 | Particle debug-count buffer | Confirmed optional-path ownership defect | P3 | Check creation and release the buffer |
+| KI-017 | Particle debug-count buffer | ✅ Fixed optional-path ownership defect | P3 | Check creation and release the buffer |
 | KI-018 | Actual startup dimensions | Confirmed port fidelity defect | P3 | Use actual client/backbuffer dimensions |
 | KI-009 | Immediate mesh replacement | Real inherited weakness | P3 | Clean failure exit; rollback/retry optional |
 | KI-010 | ImageProcessor replacement | Real inherited weakness | P3 | Clean failure exit or complete temporary target pair |
@@ -330,7 +330,11 @@ a general checked-arithmetic framework is unnecessary here.
 
 ### KI-017 — ParticleStorm debug-count buffer lacks cleanup
 
-- [ ] Check creation and release the optional staging buffer.
+- [x] ✅ Check creation and release the optional staging buffer.
+
+**Verified fix:** The optional staging buffer is created and checked before the loop and released on exit. Counter-enabled debug runs no longer report live objects; an injected creation failure exits before CopyStructureCount/Map.
+
+Original finding (before the fix):
 
 With `-define:DEBUG_COUNTS=true`, the
 [debug block](odin_port/apps/particle_storm/main.odin#L641) creates a static staging

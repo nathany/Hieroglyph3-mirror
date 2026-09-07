@@ -348,7 +348,8 @@ blended with depth-test-no-write. Port gotcha worth remembering: the render
 VS's `SimulationState` buffer has no explicit register, but FXC still
 honors the (unused-in-VS) `ParticleTexture : register(t0)` reservation, so
 the buffer lands on **t1**. The C++'s `bDebugActive` counter-readback path
-is mirrored behind `-define:DEBUG_COUNTS=true`. FPS in the title bar;
+is mirrored behind `-define:DEBUG_COUNTS=true`: its staging buffer is checked
+at startup and released on exit (KI-017 fixed). FPS in the title bar;
 the camera starts at C++'s final translation (-100, 60.5, -100), without adding
 the default node offset (KI-006 fixed).
 The priming pass explicitly unbinds both UAV slots before insertion reuses one,

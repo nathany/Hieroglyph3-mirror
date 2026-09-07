@@ -274,6 +274,10 @@ just check interlocking_terrain_tiles passed. The 18-capture debug run covered a
 
 just check particle_storm passed. Normal and DEBUG_COUNTS=true builds each ran startup, animation, movement and resize/restore (five captures, exit 0). The normal build had no D3D messages; the counter build had no UAV hazard but reported the known KI-017 live-object leak at shutdown. Counter output showed current=0 and positive, increasing next counts, confirming unbinding preserved append counters. Particle rendering was inspected. Optional staging-buffer ownership remains KI-017 at this checkpoint. Evidence: p3-fixes/KI-020/ and KI-020-counts/.
 
+### KI-017
+
+Normal and DEBUG_COUNTS checks passed, along with just asan particle_storm and an additional ASan build with DEBUG_COUNTS=true. Normal startup (two captures), enabled movement/resize run (five captures), and enabled ASan resize/restore all rendered and exited 0. The enabled native debug log is now empty, where KI-020-counts had reported 40 live-object messages. An isolated zero-byte staging descriptor produced exactly the two expected CreateBuffer errors and a clean exit before readback. Evidence: p3-fixes/KI-017/, KI-017-counts/, KI-017-asan/, and particle-count-failure/.
+
 ## Retained local evidence
 
 Artifacts are outside the repository under:
