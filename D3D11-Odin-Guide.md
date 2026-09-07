@@ -202,9 +202,15 @@ take that route.
    release partial results when a later step fails.
 
 2. **Debug layer from day one.** `D3D11.CREATE_DEVICE_FLAGS{.DEBUG}` when creating the
-   device (in debug builds). Most "black screen, no error" problems become a one-line
-   warning in the debugger output. This complements HRESULT checks and does not
-   establish that a successful frame matches the reference.
+   device (in debug builds). Read its messages in a native debugger's output window
+   or through `ID3D11InfoQueue`; they are separate from console output. Querying
+   `ID3D11Debug` and `ID3D11InfoQueue` checks that the layer is available on the
+   actual device. `ReportLiveDeviceObjects` helps investigate COM ownership, but
+   account for objects deliberately kept alive by the diagnostic itself.
+   The layer complements HRESULT checks and visual comparison: an API-valid
+   wrong constant buffer can still render incorrectly without a warning.
+   RenderDoc is useful for inspecting a captured draw's resources and pipeline;
+   it complements the live debug layer rather than replacing it.
 
 3. **HRESULT handling.** Check creation, mapping, resize, and presentation results.
    For a small demo, reporting failure, cleaning up, and exiting is sufficient;
@@ -271,7 +277,7 @@ take that route.
 11. **Nothing is bound by default.** Viewport, primitive topology, render targets —
     set them explicitly. A missing `RSSetViewports` is the classic silent black screen.
 
-12. **Register assignment is per stage, and reservations count even when unused.**
+12. **Register assignment is per stage and compiled variant.**
     Without explicit `register()` annotations, FXC numbers each stage's cbuffers from
     b0 independently, in declaration order, skipping ones that stage doesn't use — so
     the same `Transforms` cbuffer can be b0 in the VS and b1 in the GS. Textures and
@@ -280,7 +286,12 @@ take that route.
     `StructuredBuffer` in the same file to t1. The symptom is a shader that reads
     zeros with no warning from anything. Hieroglyph3 never hits this because
     `ParameterManagerDX11` binds by reflection; binding by hand, check the assignments
-    (`fxc /dumpbin`, or reflect via `D3DReflect`) rather than assuming.
+    (`fxc /dumpbin`, `D3DDisassemble`, or reflection via `D3DReflect`). Check every
+    macro variant too: terrain's `SHADING_SIMPLE` domain shader puts `sampleparams`
+    at `b1`, while `SHADING_DEBUG_LOD` puts `patch` there. Always binding the same
+    array supplies camera data as height-map dimensions in shaded mode (KI-019).
+    Small explicit per-variant bindings retain the book's shaders without rebuilding
+    the engine's reflection system.
 
 13. **Match the reference texture's color-space interpretation.** WIC (and
     therefore DirectXTK's `WICTextureLoader`, which the engine uses) inspects a PNG's
@@ -531,6 +542,12 @@ LightPrepass sample shows the lighter-weight variant. Valuable because Luna's DX
 scene infrastructure (meshes, many lights) you haven't built. Consider it a standalone
 project. Reference: `Applications/DeferredRendering/`, `Data/Shaders/GBuffer*.hlsl`.
 
+The Odin demos intentionally provide working first-person cameras here. These two
+C++ samples omit camera event registration in their setup overrides, so their
+viewpoint stays fixed even though they construct a first-person camera. Preserve
+the useful input behavior when writing your own sample; do not infer a movement
+speed error from that difference.
+
 ---
 
 ## Further chapters and an optional DX12 route
@@ -545,6 +562,10 @@ project. Reference: `Applications/DeferredRendering/`, `Data/Shaders/GBuffer*.hl
 - **Ch. 9, Dynamic Tessellation:** advanced applications of ch. 4; implement here
   to explore adaptive geometry, or defer until your DX12 work. *(Reference ports: `curved_pn_triangles`,
   `interlocking_terrain_tiles`.)*
+  The current terrain port has separate complex-LOD and shaded-mode defects
+  (KI-002/KI-019); compare those modes with C++. Curved PN's adaptive mode has an
+  inherited adjacency mismatch and can produce malformed or incomplete patches
+  in either implementation.
 - **Not book content at all** (engine/blog demos — ignore): BasicScripting (Lua),
   BasicScenes, BasicRenderViews, KinectPlayground, Kinect2Playground,
   OculusRiftSample, MFCwithD3D11, GlyphletViewerWPF, Glyphlets, VolumeRendering,
@@ -554,10 +575,18 @@ project. Reference: `Applications/DeferredRendering/`, `Data/Shaders/GBuffer*.hl
 
 ## Appendix A — Using the C++ demos alongside
 
-The solution builds with VS2022 (projects retargeted to v143, DirectXTK 2019 via
-NuGet); built demos land in `Applications/Bin`. Running the original next to your Odin
+The solution builds with VS2022 (projects retargeted to v143, DirectXTK via
+NuGet); built demos land in `Applications/Bin`. Run them from that directory so
+their relative asset paths resolve. Running the original next to your Odin
 port is the fastest way to answer "is my output actually right?" — especially for
 TessellationParams (ch. 4 intuition) and the image-processing filters (ch. 10).
+
+Compare the same modes, camera, and client size. Animation and frame-rate-dependent
+simulations need not produce identical pixels at the same wall-clock delay.
+Windows DPI scaling can also affect capture dimensions. Use an actual client-area
+capture or an inspected RenderDoc frame; a black capture immediately after resize
+may be a transient frame, especially in the slower image filters. The reference
+can contain defects too: consult the issue record before copying broken behavior.
 
 ---
 

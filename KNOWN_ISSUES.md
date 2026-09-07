@@ -2,9 +2,11 @@
 
 This record revalidates the reports collected on 2026-08-11 against the current
 Odin and C++ source at `f92da47` on 2026-09-06. It is a current-tree audit, not a
-new diff review against `master`. The demos have been tested and work; the
-remaining issues concern reference fidelity, particular controls, failure paths,
-or unusual inputs. No implementation fixes were made during this audit.
+new diff review against `master`. A subsequent runtime baseline at `9a91a68`
+used Odin `dev-2026-09-nightly:a2fb372`: all 15 demos launched and closed normally,
+but selected controls and visual comparisons exposed the defects below, including
+KI-019. Successful startup is not a clean visual or API-validation result.
+See [validation records](odin_port/VALIDATION.md) for coverage and limitations.
 
 The executable C++ applications, their helpers, and the dependency versions used
 here are the behavioral reference. An inherited problem is still real, but fixing
@@ -23,6 +25,8 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 |---|---|---|---|---|
 | KI-001 | DXGI factory relationship | Confirmed port defect | P1 | Small ownership correction; restores reference |
 | KI-002 | Terrain complex LOD | Confirmed port omission | P2 | Moderate compute-prepass addition; restores lesson |
+| KI-019 | Terrain shaded-mode cbuffer slot | Confirmed port binding defect | P2 | Small per-variant binding correction; restores reference |
+| KI-020 | Particle startup UAV hazard | Confirmed port binding-cleanup omission | P3 | Unbind priming UAVs; preserve append counters |
 | KI-003 | Skin camera and resize | Confirmed port omission | P2 | Moderate local input/resize addition |
 | KI-004 | Cone apex normals | Confirmed semantic translation defect | P2 | `normalize0`; preserves reference zero input |
 | KI-008 | Failed swap-chain resize | Confirmed port failure-path defect | P2 | Return failure and stop cleanly; recovery optional |
@@ -40,11 +44,14 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 | KI-010 | ImageProcessor replacement | Real inherited weakness | P3 | Clean failure exit or complete temporary target pair |
 | KI-007 | Claimed missing mip chain | Disproved as a port regression | None | Mips would be an optional quality enhancement |
 
-Suggested batches: teaching explanations and inexpensive fidelity values; shared
-factory ownership; terrain LOD and SkinAndBones interaction; then resize and
-ownership failures. Parser hardening and inherited-behavior improvements can
-remain separate. Prefer explicit error, cleanup, and exit where a recovery
-framework would obscure the lesson.
+Prefer one semantic fix, relevant tests, then one commit. Keep KI-001 isolated,
+and fix KI-019 separately from KI-002 so the shading and LOD improvements have
+distinct evidence. Small shared-cause batches such as KI-006's two camera values
+are reasonable; KI-004 and KI-011 can share a SkinAndBones test session. Split
+KI-012 by ownership boundary instead of rewriting every constructor together.
+Shared renderer startup changes require all 14 rendering demos; local changes
+normally need the affected demo and modes. See the validation record's test-scope
+table. Prefer explicit error, cleanup, and exit where recovery would obscure the lesson.
 
 ## Confirmed port and input-handling issues
 
@@ -77,6 +84,33 @@ and bind the output for the hull shader. Restore creation, dispatch, UAV unbind,
 SRV binding, and cleanup. This moderate addition restores the lesson. Correct
 the false inherited-quirk explanation in code and README alongside implementation.
 
+The runtime baseline reproduced the loss of refinement after `L`, including the
+LOD debug view. This is independent of the shaded-mode binding problem below.
+
+### KI-019 — Terrain shaded mode binds camera data as height-map dimensions
+
+- [ ] Bind the domain shader's second cbuffer according to its compiled variant.
+
+Freeze with `A`, select shaded mode with `D`, then solid rendering with `W`.
+Even without pressing `L`, Odin renders mostly black terrain while C++ produces
+smooth gray shading. The [port](odin_port/apps/interlocking_terrain_tiles/main.odin#L482)
+always binds `[cb_main, cb_patch, cb_sample]` at domain-shader slots `b0–b2`.
+Compilation/disassembly with the port's debug flags confirms:
+
+| Variant | Compiled cbuffers |
+|---|---|
+| `SHADING_SOLID` | `main → b0` |
+| `SHADING_SIMPLE` | `main → b0`, `sampleparams → b1` |
+| `SHADING_DEBUG_LOD` | `main → b0`, `patch → b1` |
+
+Shaded mode therefore reads camera position as height-map dimensions, corrupting
+the Sobel filter's sample offsets and resulting normals. C++
+[binds by reflected slot](Source/ShaderReflectionDX11.cpp#L229).
+Choose `cb_sample` or `cb_patch` at `b1` according to the variant; no shader edits
+or reflection framework are needed. Correct the comment claiming every DS uses
+all three buffers. Test all shading variants with both hull modes. An API-valid
+wrong buffer can evade debug-layer diagnostics; inspect actual shader bindings.
+
 ### KI-003 — SkinAndBones omits camera and resize behavior
 
 - [ ] Forward camera input and recreate size-dependent state on `WM_SIZE`.
@@ -93,6 +127,9 @@ plain Odin camera and pending-resize pattern.
 Preserve `A` replay while clearing camera state on release. C++ forwards `A`
 key-down but consumes key-up for replay, which can latch left movement.
 Avoiding that inherited input conflict is a small documented improvement.
+
+The runtime baseline confirmed missing forward movement before replay and a
+stretched fixed projection after a wide resize; animation and replay ran.
 
 ### KI-004 — SkinAndBones generates NaN normals at the cone apex
 
@@ -147,6 +184,9 @@ translation to the root node. The [particle](Applications/ParticleStorm/App.cpp#
 and [water](Applications/WaterSimulationI/App.cpp#L115) values are already final.
 Change the constants and additive-offset explanations, including README notes.
 
+Both simulations animated in the runtime baseline, with visibly different startup
+framing from C++. The difference was not attributed to the compiler update.
+
 ### KI-011 — SkinAndBones effectively disables anisotropic filtering
 
 - [ ] Set the cone material's `MaxAnisotropy` to 16.
@@ -192,6 +232,9 @@ The [port](odin_port/apps/interlocking_terrain_tiles/main.odin#L33) requests 640
 [C++](Applications/InterlockingTerrainTiles/App.cpp#L52) requests 1024x768. Both
 are 4:3, but lower resolution changes visible terrain detail. This differs from
 respecting the actual size Windows creates (KI-018).
+
+At the baseline desktop's 150% scaling, the captured client sizes were 960x720
+physical pixels for Odin and 1536x1152 for C++, confirming the requested-size gap.
 
 ### KI-014 — DDS cube-map size arithmetic can wrap
 
@@ -277,6 +320,23 @@ actual dimensions for its [C++ projection](Applications/RotatingCube/App.cpp#L30
 while [Odin](odin_port/apps/rotating_cube/main.odin#L234) uses constants.
 No constrained-desktop runtime reproduction was performed during this audit.
 
+### KI-020 — ParticleStorm leaves priming UAVs bound for the first insertion
+
+- [ ] Explicitly unbind the priming UAVs before the next pass.
+
+The first-frame [priming dispatch](odin_port/apps/particle_storm/main.odin#L575)
+leaves `next` at `u0` and `current` at `u1`. When the first insertion runs that
+frame, [binding only `u0`](odin_port/apps/particle_storm/main.odin#L596) attempts to
+bind `current` in both slots. The debug layer reports
+`DEVICE_CSSETUNORDEREDACCESSVIEWS_HAZARD` and automatically clears `u1`.
+Both messages were captured before KI-001; no particle loss was demonstrated.
+
+C++ [Dispatch](Source/PipelineManagerDX11.cpp#L558) clears desired shader resources
+between passes and applies the changed UAV slots together. Clear both priming
+slots after the dispatch, or supply the complete insertion binding state. Keep
+the append counters intact. This is a small educational correction, not a new
+simulation algorithm. Other compute samples already unbind after their dispatches.
+
 ## Real inherited weaknesses: optional improvements
 
 ### KI-009 — Immediate mesh replacement failures suppress retries
@@ -331,8 +391,26 @@ inherited failure behavior without changing filtering algorithms.
   quad-only selection in both versions; C++ setters reject out-of-range edits.
 - **Curved PN adaptive mode:** C++ loads PLY without adjacency (the default in
   [GeometryLoaderDX11.h](Include/GeometryLoaderDX11.h#L37)), producing three-point
-  patches while the alternate hull shader expects six. Repair needs adjacency
-  generation and is a separate optional exercise.
+  patches while the alternate hull shader expects six. Runtime captures show
+  malformed/incomplete patches in both versions, not necessarily a blank image.
+  Repair needs adjacency generation and is a separate optional exercise.
+- **Deferred/LightPrepass camera wiring:** the C++ setup overrides create a camera
+  ([Deferred](Applications/DeferredRendering/App.cpp#L74),
+  [LightPrepass](Applications/LightPrepass/App.cpp#L72)) but omit
+  `SetEventManager(&CameraEventHub)`, which the
+  [base setup](Source/RenderApplication.cpp#L149) supplies. `IEventListener` starts
+  with a null manager and only registers events when assigned one; scene insertion
+  does not repair this. The C++ viewpoint stays fixed while Odin responds to input.
+  Preserve Odin's useful camera behavior and document the departure. Both camera
+  implementations use 10 units/second; reducing Odin's speed is not a remedy.
+- **LightPrepass mask warning:** the
+  [depth/stencil-only pass](odin_port/apps/light_prepass/main.odin#L973) uses
+  `MaskLP`, whose pixel shader declares `SV_Target0` although its color write is
+  intentionally discarded. The debug layer reports
+  `DEVICE_DRAW_RENDERTARGETVIEW_NOT_SET`; C++
+  [uses the same mask pass](Applications/LightPrepass/ViewGBuffer.cpp#L139).
+  Treat this specific warning as explained inherited behavior, not a missing color
+  target to add or a reason to mute unrelated validation messages.
 
 ## Disproved or obsolete reports
 
@@ -394,7 +472,16 @@ The earlier 2026-08-11 record reports the same suite and successful
 `just asan basic_application` / `just asan immediate_renderer` builds, without
 executing them. Those are historical results, not new sanitizer runs.
 
-Neither audit performed new graphical comparisons, application tracking-allocator
+Those source/documentation audits did not perform new graphical comparisons, application tracking-allocator
 runs, debug-layer validation, constrained-desktop tests, or failure injection.
 Reported paths and repeated patterns were traced; this is not proof that every
 combination of sample controls and hardware behavior is defect-free.
+
+The later `9a91a68` baseline ran all 15 Odin demos and existing C++ executables,
+saved 195 screen-client captures, and exercised selected controls, resize, and
+minimize/restore. KI-002, KI-003, KI-006, and KI-013 were visible; KI-019 was newly
+confirmed. The reference executables were not rebuilt. Animated frames were not
+synchronized, and text omissions were treated as documented differences. A
+transient black C++ ImageProcessor restore capture did not persist on retest.
+That baseline requested the D3D debug layer but did not collect its messages;
+subsequent instrumentation results belong in [VALIDATION.md](odin_port/VALIDATION.md).

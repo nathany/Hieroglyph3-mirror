@@ -11,6 +11,9 @@ Use this checklist for reviews that include `odin_port/`. Search results are sta
 
 ## Frame and resource lifecycle
 
+- Verify compiled bindings for each affected shader stage and macro variant. Removing an unused cbuffer can shift implicit registers; an API-valid buffer at the wrong slot may produce no debug warning. Use disassembly/reflection or a frame capture to resolve uncertain assignments.
+- Trace event registration as well as message forwarding before claiming camera parity. A constructed C++ camera may never receive the requested key/frame events; distinguish useful Odin improvements from accidental movement differences.
+
 - Inspect every capture or backbuffer-copy path relative to `Present`; account for the configured swap effect and whether backbuffer contents remain defined.
 - Trace resize success or failure through every caller. Do not assume a `void` helper succeeded when callers immediately use recreated resources.
 - For resource replacement, require successful creation of the replacement before destroying or overwriting the valid resource, unless failure terminates the application safely.
@@ -31,6 +34,13 @@ Use this checklist for reviews that include `odin_port/`. Search results are sta
 - Compare each C++ backbuffer, target, viewport, and projection calculation separately: an actual-size correction in one does not establish that all reference calculations use actual dimensions.
 
 ## Required sweep
+
+When establishing a graphical baseline, distinguish enabling instrumentation from
+collecting evidence: verify debug interfaces and an isolated known diagnostic,
+then inspect actual application messages. Record capture provenance and DPI,
+controls, unsynchronized animation, and any incomplete runtime paths. Native
+debug output is separate from stdout/stderr; an empty console log proves neither
+that the debug layer is active nor that rendering is correct.
 
 Run repository-wide searches covering these pattern families and trace the relevant in-scope call sites. Keep occurrences outside a requested diff separate from introduced defects:
 

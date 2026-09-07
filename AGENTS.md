@@ -28,6 +28,8 @@
 - Preserve Direct3D lifecycle and ownership invariants, especially resource creation failure paths, resize handling, `Present` behavior, mapped-resource bounds, COM releases, and GPU/CPU synchronization.
 - Check Odin-specific hazards such as checked size arithmetic before narrowing, integer and enum conversions, normalization of zero-length vectors, partial-initialization cleanup, `defer` scope, temporary allocator lifetimes in long-running loops, slices that outlive their storage, actual versus requested dimensions, and accidental shadowing.
 - When one sample contains a defect caused by a repeated porting pattern, search the other samples and shared `glyph` code for the same pattern.
+- Verify resource slots for every affected compiled shader variant and stage. Unused cbuffers can disappear and change implicit slots; legal bindings can supply semantically wrong data without a debug-layer error.
+- Trace camera event registration as well as input forwarding. The C++ DeferredRendering and LightPrepass setup overrides omit camera registration; preserve and document the useful Odin camera behavior.
 
 ## Validation
 
@@ -36,6 +38,10 @@
 - Run `just verify` before finishing a branch-wide review or change.
 - For ownership, bounds, or lifetime changes, build the relevant sample with `just asan <app>` and run it when the environment supports the sample.
 - Use the tracking allocator and Direct3D debug layer when the affected path needs leak, lifetime, or API validation. Compiler checks and sanitizer builds complement review; they do not establish behavioral equivalence by themselves.
+- Distinguish requesting the debug layer from observing it. When establishing instrumentation, verify the device's debug flag and debug interfaces, observe a controlled diagnostic in an isolated probe, and collect actual demo messages. Keep deliberate probe errors separate from application findings; do not globally mute warnings to obtain a clean result.
+- Use shader reflection/disassembly or a RenderDoc frame when binding or rendering evidence is needed. RenderDoc is optional; record whether capture and replay actually worked rather than treating installation as validation.
+- For graphical baselines, record revision, compiler, executable provenance, controls, dimensions/DPI, and capture method. Verify that captures show the actual client area; allow slow frames to settle and avoid pixel-equality claims for unsynchronized animation. Retain observed exceptions when comparing later fixes.
+- Prefer one semantic fix per commit after relevant validation. Keep shared API-contract changes and their callers together; use small batches only when they share a cause or narrowly shared test scope. Retest all 14 rendering demos for shared renderer startup changes; target local fixes to their affected demos and modes. BasicWindow does not use Direct3D.
 
 ## Review expectations
 

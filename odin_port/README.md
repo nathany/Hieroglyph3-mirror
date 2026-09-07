@@ -3,8 +3,10 @@
 Odin reference implementations of the Hieroglyph3 sample applications from
 *Practical Rendering and Computation with Direct3D 11*, written against raw
 D3D11 via `vendor:directx`. Companion to
-[D3D11-Odin-Guide.md](../D3D11-Odin-Guide.md); each app mirrors the behavior
-of its C++ original (in `../Applications/`).
+[D3D11-Odin-Guide.md](../D3D11-Odin-Guide.md); each app follows its C++ original
+(in `../Applications/`) with documented deviations and outstanding defects.
+Read [KNOWN_ISSUES.md](../KNOWN_ISSUES.md) and [validation records](VALIDATION.md)
+alongside the sample notes; “runs” does not imply every mode matches the reference.
 
 ## Layout
 
@@ -36,10 +38,24 @@ just run basic_window
 Run `just list` to list the sample names and `just --list` to see all recipes.
 Useful local validation commands include `just check basic_window`,
 `just verify`, and `just asan basic_window`. The run recipe
-wraps `odin run apps/<name> -collection:glyph=glyph -subsystem:windows -debug`;
-drop `-subsystem:windows` from the recipe to get a console for debug prints. ASan
-builds keep the console subsystem so sanitizer diagnostics remain visible. Text
+wraps `odin run apps/<name> -collection:glyph=glyph -subsystem:windows -debug`.
+ASan builds keep the console subsystem so sanitizer diagnostics remain visible. Text
 rendering is permanently out of scope for these ports.
+
+Debug builds request the D3D debug layer, which requires Windows Graphics Tools.
+Its messages go to native debugger output or `ID3D11InfoQueue`, not ordinary
+stdout/stderr. An empty console log is not evidence that the layer found nothing.
+For a retained executable to launch in a debugger or RenderDoc, build from here:
+
+```sh
+odin build apps/basic_application -collection:glyph=glyph -out:bin/basic_application.exe -subsystem:windows -debug
+```
+
+`odin run` removes its output executable after normal completion. In RenderDoc,
+launch the retained executable with API validation enabled and inspect a captured
+frame's messages and pipeline bindings. A successful capture and replay is separate
+evidence from merely having RenderDoc installed. See [VALIDATION.md](VALIDATION.md)
+for the tooling checks actually performed.
 
 Data files (shaders, textures, models) load from the repo's
 `../Applications/Data` tree — the path is baked in at compile time from the
@@ -91,13 +107,13 @@ Where a demo shows live state (tessellation factors, active modes), it goes in t
 | `immediate_renderer` | Applications/ImmediateRenderer | 3 | camera; `1`/`2`/`3` off-center projection (symmetric / right / left) | ✅ core visual scope |
 | `image_processor` | Applications/ImageProcessor | 10 | `N` next filter · `I` next image · `Space` cycles sampler · left-drag pan · right-drag / wheel zoom | ✅ all 5 filters/images/samplers |
 | `tessellation_params` | Applications/TessellationParams | 4 | `G` tri/quad domain · `P` partitioning mode · `E`/`I` select edge / inside factor · numpad `+`/`-` adjust it | ✅ state in the title bar |
-| `skin_and_bones` | Applications/SkinAndBones | 8 | `A` replay animation | ✅ skinning + displacement + gizmos |
-| `curved_pn_triangles` | Applications/CurvedPointNormalTriangles | 9 | `W` wireframe · `A` adaptive silhouette · numpad `+`/`-` tessellation factor (1–10) | ✅ orbiting camera |
-| `interlocking_terrain_tiles` | Applications/InterlockingTerrainTiles | 9 | `W` wireframe · `L` hull-shader complexity · `D` shading mode (solid / shaded / LOD debug) · `A` automated camera | ✅ LOD terrain |
+| `skin_and_bones` | Applications/SkinAndBones | 8 | `A` replay animation | Runs; camera/resize and cone issues remain |
+| `curved_pn_triangles` | Applications/CurvedPointNormalTriangles | 9 | `W` wireframe · `A` adaptive silhouette · numpad `+`/`-` tessellation factor (1–10) | Base mode runs; inherited adaptive defect |
+| `interlocking_terrain_tiles` | Applications/InterlockingTerrainTiles | 9 | `W` wireframe · `L` hull-shader complexity · `D` shading mode (solid / shaded / LOD debug) · `A` automated camera | Runs; KI-002/KI-019 affect alternate modes |
 | `light_prepass` | Applications/LightPrepass | 11 | camera; `N` cycles light mode | ✅ MSAA deferred lighting |
 | `deferred_rendering` | Applications/DeferredRendering | 11 | camera; `V` display · `N` light mode · `K` G-buffer opt · `O` light opt · `M` anti-aliasing | ✅ V/N/K/O/M toggles |
-| `water_simulation` | Applications/WaterSimulationI | 12 | camera | ✅ CS water sim on wireframe heightmap |
-| `particle_storm` | Applications/ParticleStorm | 12 | camera | ✅ append/consume GPU particles, indirect draw |
+| `water_simulation` | Applications/WaterSimulationI | 12 | camera | Simulation runs; camera/feature-level departures remain |
+| `particle_storm` | Applications/ParticleStorm | 12 | camera | Simulation runs; startup camera differs |
 
 ### basic_window
 
@@ -197,6 +213,10 @@ actors' node motion rides inside the skin matrices via the bind-pose-before-
 positioning call order; and the app's `LightColor` parameter is never read
 by any of these shaders.
 
+Current limitations: camera input and resize forwarding are missing (KI-003),
+cone-apex normalization produces NaNs (KI-004), and anisotropy differs (KI-011).
+The animation/replay path runs, but a wide resize stretches the fixed projection.
+
 ### curved_pn_triangles
 
 Chapter 9's curved point-normal triangles: the flat 4-triangle `CPNTest.ply`
@@ -205,8 +225,8 @@ patches by `CurvedPointNormalTriangles.hlsl` (13 control points per patch),
 while the camera orbits (30 s/circuit). **W** toggles wireframe/solid, **±**
 adjusts the tessellation factor (1–10), **A** swaps in the silhouette-
 adaptive hull shader — preserved C++ quirk: that shader expects 6-point
-adjacency patches the app never loads, so silhouette mode doesn't render in
-the original either. The pipeline-statistics overlay is omitted (text).
+adjacency patches the app never loads, so adaptive mode can render malformed or
+incomplete patches in either version. The pipeline-statistics overlay is omitted (text).
 
 ### interlocking_terrain_tiles
 
@@ -216,9 +236,13 @@ neighbour points, the "interlocking" trick that keeps adjacent tiles'
 edge tessellation crack-free — displaced by `TerrainHeightMap.png` in the
 domain shader with distance-based LOD from the hull shader. **W** toggles
 wireframe/cull-none vs solid/cull-front, **L** swaps simple vs complex hull
-LOD (complex reads a `texLODLookup` the C++ never binds either — preserved
-quirk), **D** cycles solid/N·L/LOD-debug domain shaders (three
+LOD, **D** cycles solid/N·L/LOD-debug domain shaders (three
 `compile_defines` variants), **A** freezes the auto-orbiting viewpoint.
+
+The port currently omits C++'s lookup compute prepass and hull-shader binding
+(KI-002), so complex LOD loses refinement. Independently, N·L shading binds the
+wrong domain-shader cbuffer (KI-019); `A`, `D`, `W` shows the dark shading even
+without `L`. The requested 640×480 size also differs from C++'s 1024×768 (KI-013).
 
 ### light_prepass
 
@@ -240,6 +264,14 @@ Lengyel method). **N** cycles 3x3x3/5x5x5/7x7x7 point-light grids
 (red-to-cyan color lerp — shown in the title bar), first-person camera as
 usual, live resize recreates all five render targets. The C++ compiles
 spot/directional light shaders it never draws; those are omitted.
+
+The mask pass intentionally has no color target. Its shader still declares a
+color output, so the debug layer reports `DEVICE_DRAW_RENDERTARGETVIEW_NOT_SET`;
+C++ uses the same depth/stencil-only pass. This particular warning is expected.
+
+The working Odin camera is a useful departure: this C++ setup override omits
+camera event registration, leaving its viewpoint fixed. Movement speed remains
+the reference camera's 10 units/second, or 30 with Ctrl.
 
 ### deferred_rendering
 
@@ -264,6 +296,9 @@ position (the origin), not the camera, so the unoptimized path's specular
 is subtly wrong in the original too. The engine's SpriteRenderer display
 blit is replaced by an inline alpha-blended pixel-rect blit shader.
 
+As in LightPrepass, C++ omits camera event registration in its setup override.
+Odin deliberately provides working camera input; preserve that usability improvement.
+
 ### water_simulation
 
 Chapter 12's compute-shader water simulation. A 256×256 grid of water
@@ -280,10 +315,11 @@ initial state is a sinc-shaped splash (amplitude 40) centered at grid
 time step is elapsed-time driven (doubled by the app, clamped to 0.05) but
 the damping factor 0.9995 applies **per iteration**, so at uncapped
 thousands of FPS the waves flatten within a couple of seconds — the C++
-behaves the same way, just at its own frame rate. The camera start
-(-100, 40.5, -120) is the app's body transform *plus* the engine's default
-camera node at (0, 10, -20). The C++'s unused "FinalColor" parameter is
-omitted.
+behaves the same way, just at its own frame rate. The current camera starts at
+(-100, 40.5, -120), but C++'s final translation is (-100, 30.5, -100): its spatial
+controller replaces the default node translation rather than adding it (KI-006).
+The port also requests FL11/SM5 rather than the reference's FL10/SM4 (KI-005).
+The C++'s unused "FinalColor" parameter is omitted.
 
 ### particle_storm
 
@@ -306,7 +342,10 @@ VS's `SimulationState` buffer has no explicit register, but FXC still
 honors the (unused-in-VS) `ParticleTexture : register(t0)` reservation, so
 the buffer lands on **t1**. The C++'s `bDebugActive` counter-readback path
 is mirrored behind `-define:DEBUG_COUNTS=true`. FPS in the title bar;
-camera start (-100, 70.5, -120) = body transform + default camera node.
+the current camera start (-100, 70.5, -120) incorrectly adds the default node
+offset. C++'s final translation is (-100, 60.5, -100); see KI-006.
+The first insertion can also produce a startup UAV binding-hazard warning because
+the priming pass leaves a slot bound (KI-020); the runtime currently clears it.
 
 ### immediate_renderer
 
