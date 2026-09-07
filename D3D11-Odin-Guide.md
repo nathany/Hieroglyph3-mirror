@@ -562,8 +562,8 @@ speed error from that difference.
 - **Ch. 9, Dynamic Tessellation:** advanced applications of ch. 4; implement here
   to explore adaptive geometry, or defer until your DX12 work. *(Reference ports: `curved_pn_triangles`,
   `interlocking_terrain_tiles`.)*
-  The current terrain port still omits the complex-LOD prepass (KI-002); its
-  shaded-mode binding defect (KI-019) is fixed. Curved PN's adaptive mode has an
+  The terrain port includes the complex-LOD compute prepass and per-variant shading
+  bindings (KI-002/KI-019 fixed). Curved PN's adaptive mode has an
   inherited adjacency mismatch and can produce malformed or incomplete patches
   in either implementation.
 - **Not book content at all** (engine/blog demos — ignore): BasicScripting (Lua),

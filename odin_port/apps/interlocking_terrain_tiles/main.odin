@@ -9,9 +9,7 @@
 // Keys, all key-up, matching the C++ (text overlay omitted):
 //   - W toggles wireframe/cull-none (initial) vs solid/cull-FRONT.
 //   - L toggles the hull shader: hsSimple (midpoint distance LOD) vs
-//     hsComplex (neighbour-aware LOD via a texLODLookup texture the app
-//     never provides — preserved C++ quirk: t1 is unbound in the original
-//     too, so complex mode reads zeros).
+//     hsComplex (neighbour-aware LOD via the compute prepass's texLODLookup).
 //   - D cycles the domain shader's shading: solid colour -> N.L shading ->
 //     LOD debug view (three compiles of dsMain with different defines).
 //   - A toggles the auto-orbiting viewpoint (30 s/circuit, look-at swinging
@@ -124,6 +122,8 @@ Scene :: struct {
 	sampler:        ^d3d11.ISamplerState,
 	height_texture: ^d3d11.ITexture2D,
 	height_srv:     ^d3d11.IShaderResourceView,
+	lod_texture:    ^d3d11.ITexture2D,
+	lod_srv:        ^d3d11.IShaderResourceView,
 	height_dims:    [2]f32,
 	cb_main:        ^d3d11.IBuffer,
 	cb_patch:       ^d3d11.IBuffer,
@@ -137,6 +137,8 @@ scene_destroy :: proc(s: ^Scene) {
 	release(s.cb_sample)
 	release(s.cb_patch)
 	release(s.cb_main)
+	release(s.lod_srv)
+	release(s.lod_texture)
 	release(s.height_srv)
 	release(s.height_texture)
 	release(s.sampler)
@@ -175,6 +177,56 @@ write_cbuffer :: proc(ctx: ^d3d11.IDeviceContext, buffer: ^d3d11.IBuffer, value:
 		(^T)(mapped.pData)^ = value^
 		ctx->Unmap((^d3d11.IResource)(buffer), 0)
 	}
+}
+
+// CreateComputeShaderResources + RunComputeShader: one 16x16 group summarizes
+// each tile's height samples into a plane normal and deviation for hsComplex.
+// Only the lookup texture/SRV survive this one-time prepass.
+create_lod_lookup :: proc(r: ^renderer.Renderer, height_texture: ^d3d11.ITexture2D, height_srv: ^d3d11.IShaderResourceView) -> (texture: ^d3d11.ITexture2D, srv: ^d3d11.IShaderResourceView, ok: bool) {
+	height_desc: d3d11.TEXTURE2D_DESC
+	height_texture->GetDesc(&height_desc)
+	// The supplied shader maps one group to one of the fixed 32x32 tiles.
+	if height_desc.Width != TERRAIN_X_LEN * 16 || height_desc.Height != TERRAIN_Z_LEN * 16 {
+		fmt.eprintln("Terrain lookup requires a 512x512 height map (16x16 samples per tile)")
+		return
+	}
+	defer if !ok {
+		if srv != nil {srv->Release(); srv = nil}
+		if texture != nil {texture->Release(); texture = nil}
+	}
+	blob := shader.compile("InterlockingTerrainTilesComputeShader.hlsl", "csMain", "cs_5_0") or_return
+	defer blob->Release()
+	compute: ^d3d11.IComputeShader
+	if r.device->CreateComputeShader(blob->GetBufferPointer(), blob->GetBufferSize(), nil, &compute) < 0 {return}
+	defer compute->Release()
+	desc := d3d11.TEXTURE2D_DESC {
+		Width = TERRAIN_X_LEN,
+		Height = TERRAIN_Z_LEN,
+		MipLevels = 1,
+		ArraySize = 1,
+		Format = .R32G32B32A32_FLOAT,
+		SampleDesc = {Count = 1},
+		Usage = .DEFAULT,
+		BindFlags = {.UNORDERED_ACCESS, .SHADER_RESOURCE},
+	}
+	if r.device->CreateTexture2D(&desc, nil, &texture) < 0 {return}
+	uav: ^d3d11.IUnorderedAccessView
+	if r.device->CreateUnorderedAccessView((^d3d11.IResource)(texture), nil, &uav) < 0 {return}
+	defer uav->Release()
+	if r.device->CreateShaderResourceView((^d3d11.IResource)(texture), nil, &srv) < 0 {return}
+
+	r.ctx->CSSetShader(compute, nil, 0)
+	input_srv := height_srv
+	r.ctx->CSSetShaderResources(0, 1, &input_srv)
+	r.ctx->CSSetUnorderedAccessViews(0, 1, &uav, nil)
+	r.ctx->Dispatch(height_desc.Width / 16, height_desc.Height / 16, 1)
+	// End the output binding before the hull shader reads this texture.
+	nil_uav: ^d3d11.IUnorderedAccessView
+	nil_srv: ^d3d11.IShaderResourceView
+	r.ctx->CSSetUnorderedAccessViews(0, 1, &nil_uav, nil)
+	r.ctx->CSSetShaderResources(0, 1, &nil_srv)
+	r.ctx->CSSetShader(nil, nil, 0)
+	return texture, srv, true
 }
 
 setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
@@ -333,6 +385,7 @@ setup :: proc(r: ^renderer.Renderer) -> (s: Scene, ok: bool) {
 	s.cb_main = dynamic_cbuffer(device, size_of(Main_CB)) or_return
 	s.cb_patch = dynamic_cbuffer(device, size_of(Patch_CB)) or_return
 	s.cb_sample = dynamic_cbuffer(device, size_of(Sample_Params_CB)) or_return
+	s.lod_texture, s.lod_srv = create_lod_lookup(r, s.height_texture, s.height_srv) or_return
 
 	return s, true
 }
@@ -493,12 +546,9 @@ main :: proc() {
 		ctx->VSSetConstantBuffers(0, 1, &scene.cb_main)
 		ctx->HSSetShader(scene.hs_simple if simple_complexity else scene.hs_complex, nil, 0)
 		ctx->HSSetConstantBuffers(0, 2, &hs_cbuffers[0])
-		// t0 is bound for symmetry with the DS; the hull constant functions
-		// actually derive LOD from control-point positions, not the height
-		// map. texLODLookup (t1) stays unbound, as in the C++ — hsComplex's
-		// ReadLookup therefore returns zeros, giving every patch the minimum
-		// LOD, so 'L' visibly flattens the terrain rather than refining it.
-		ctx->HSSetShaderResources(0, 1, &scene.height_srv)
+		// hsComplex reads the precomputed plane/deviation lookup at t1.
+		hs_resources := [2]^d3d11.IShaderResourceView{scene.height_srv, scene.lod_srv}
+		ctx->HSSetShaderResources(0, 2, &hs_resources[0])
 		ctx->HSSetSamplers(0, 1, &scene.sampler)
 		ctx->DSSetShader(scene.domain_shaders[shading], nil, 0)
 		ctx->DSSetConstantBuffers(0, 2, &ds_cbuffers[0])

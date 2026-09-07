@@ -164,7 +164,7 @@ repository's required checks, and preserve each fix's before/after evidence.
 | KI-009 / KI-010 | Separate inherited replacement-failure improvements for ImmediateRenderer / ImageProcessor; inject failures. A clear error and clean exit are sufficient. |
 | KI-007 | No defect fix; mip generation would change the reference output. |
 
-## Retained local evidence
+## P2 follow-up validation
 
 ### P2 follow-up: KI-019
 
@@ -175,6 +175,25 @@ ran all three shading modes with both hull modes plus resize/minimize/restore:
 Gray shaded terrain and the colored simple-LOD view now render as intended;
 complex LOD remains a separate unfixed omission at this checkpoint. Evidence is
 in `p2-fixes/KI-019/` beside the earlier artifact directories below.
+
+### KI-002
+
+After `f54515a`, the terrain compute prepass, lookup binding, and cleanup were
+restored. `just check interlocking_terrain_tiles` and
+`just asan interlocking_terrain_tiles` passed. The debug mode sweep captured 18
+states with exit 0 and no D3D messages; the standalone ASan run rendered and
+exited 0 with empty sanitizer stderr. Complex-mode wireframe and LOD debug
+captures show varying refinement instead of minimum tessellation.
+
+An external probe compiled a copy of the actual sample setup, read back the
+32x32 RGBA32F lookup, and verified all 1,024 entries were finite with unit plane
+normals and deviations spanning 0..0.95456916. Compute SRV/UAV slots were nil
+after dispatch. After scene/renderer teardown, live-object reporting found only
+the probe's diagnostic device references. Informational destruction messages
+were allowed; no warnings other than that retained device were accepted.
+Evidence: `p2-fixes/KI-002/`, `KI-002-asan/`, and `terrain-probe-output.txt`.
+
+## Retained local evidence
 
 Artifacts are outside the repository under:
 

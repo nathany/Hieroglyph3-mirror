@@ -24,7 +24,7 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 | ID | Report | Classification | Priority | Minimum change / divergence |
 |---|---|---|---|---|
 | KI-001 | DXGI factory relationship | ✅ Fixed port defect (2026-09-06) | P1 | Small ownership correction; restores reference |
-| KI-002 | Terrain complex LOD | Confirmed port omission | P2 | Moderate compute-prepass addition; restores lesson |
+| KI-002 | Terrain complex LOD | ✅ Fixed port omission | P2 | Moderate compute-prepass addition; restores lesson |
 | KI-019 | Terrain shaded-mode cbuffer slot | ✅ Fixed port binding defect | P2 | Small per-variant binding correction; restores reference |
 | KI-020 | Particle startup UAV hazard | Confirmed port binding-cleanup omission | P3 | Unbind priming UAVs; preserve append counters |
 | KI-003 | Skin camera and resize | Confirmed port omission | P2 | Moderate local input/resize addition |
@@ -79,21 +79,26 @@ Partial-initialization cleanup remains separate work under KI-012.
 
 ### KI-002 — Complex interlocking-terrain LOD is nonfunctional
 
-- [ ] Port the lookup compute prepass and bind its result at hull-shader `t1`.
+- [x] ✅ Port the lookup compute prepass and bind its result at hull-shader `t1`.
 
-The [port](odin_port/apps/interlocking_terrain_tiles/main.odin#L489) leaves
-`texLODLookup` unbound. Selecting `hsComplex` with `L` therefore reads zeros
-and produces minimum tessellation instead of height-variance, neighbour-aware LOD.
+The port previously left `texLODLookup` unbound. Selecting `hsComplex` with `L`
+read zeros and produced minimum tessellation instead of height-variance,
+neighbour-aware LOD.
 
 C++ calls `CreateComputeShaderResources` and `RunComputeShader` during
 initialization. Their [implementations](Applications/InterlockingTerrainTiles/App.cpp#L619)
 create a 32x32 `R32G32B32A32_FLOAT` UAV/SRV, dispatch the supplied compute shader,
-and bind the output for the hull shader. Restore creation, dispatch, UAV unbind,
-SRV binding, and cleanup. This moderate addition restores the lesson. Correct
-the false inherited-quirk explanation in code and README alongside implementation.
+and bind the output for the hull shader. The port now follows these stages,
+unbinds compute input/output before drawing, and releases temporary compute
+resources after the one-time prepass. The lookup texture/SRV live with the scene.
+It rejects height maps other than the supplied 512x512 size, making the shader's
+16x16-samples-per-tile requirement explicit rather than dispatching out of bounds.
 
-The runtime baseline reproduced the loss of refinement after `L`, including the
-LOD debug view. This is independent of the shaded-mode binding problem below.
+Validation: terrain compiler check and ASan build/run passed; all shading/hull
+modes ran without D3D diagnostics. Readback verified 1,024 finite lookup entries,
+unit plane normals, and varying deviations; live-object reporting confirmed
+cleanup. Complex wireframe refinement and LOD debug colors were visually checked.
+The independent shading correction remains recorded as KI-019.
 
 ### KI-019 — Terrain shaded mode binds camera data as height-map dimensions
 

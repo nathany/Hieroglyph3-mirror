@@ -109,7 +109,7 @@ Where a demo shows live state (tessellation factors, active modes), it goes in t
 | `tessellation_params` | Applications/TessellationParams | 4 | `G` tri/quad domain · `P` partitioning mode · `E`/`I` select edge / inside factor · numpad `+`/`-` adjust it | ✅ state in the title bar |
 | `skin_and_bones` | Applications/SkinAndBones | 8 | `A` replay animation | Runs; camera/resize and cone issues remain |
 | `curved_pn_triangles` | Applications/CurvedPointNormalTriangles | 9 | `W` wireframe · `A` adaptive silhouette · numpad `+`/`-` tessellation factor (1–10) | Base mode runs; inherited adaptive defect |
-| `interlocking_terrain_tiles` | Applications/InterlockingTerrainTiles | 9 | `W` wireframe · `L` hull-shader complexity · `D` shading mode (solid / shaded / LOD debug) · `A` automated camera | Runs; KI-002 affects complex LOD |
+| `interlocking_terrain_tiles` | Applications/InterlockingTerrainTiles | 9 | `W` wireframe · `L` hull-shader complexity · `D` shading mode (solid / shaded / LOD debug) · `A` automated camera | Simple/complex LOD and shading verified |
 | `light_prepass` | Applications/LightPrepass | 11 | camera; `N` cycles light mode | ✅ MSAA deferred lighting |
 | `deferred_rendering` | Applications/DeferredRendering | 11 | camera; `V` display · `N` light mode · `K` G-buffer opt · `O` light opt · `M` anti-aliasing | ✅ V/N/K/O/M toggles |
 | `water_simulation` | Applications/WaterSimulationI | 12 | camera | Simulation runs; camera/feature-level departures remain |
@@ -239,8 +239,10 @@ wireframe/cull-none vs solid/cull-front, **L** swaps simple vs complex hull
 LOD, **D** cycles solid/N·L/LOD-debug domain shaders (three
 `compile_defines` variants), **A** freezes the auto-orbiting viewpoint.
 
-The port currently omits C++'s lookup compute prepass and hull-shader binding
-(KI-002), so complex LOD loses refinement. Domain-shader cbuffers are bound per
+As in C++, a one-time compute prepass summarizes the supplied 512×512 height map
+into a 32×32 plane/deviation lookup. Each 16×16 thread group covers one tile.
+The UAV is unbound before the hull shader reads the lookup at t1; other height-map
+sizes are rejected explicitly. Domain-shader cbuffers are bound per
 compiled shading variant: `main` at b0, then `sampleparams` for N·L shading or
 `patch` for LOD debug at b1 (KI-019 fixed). The requested 640×480 size still
 differs from C++'s 1024×768 (KI-013).
