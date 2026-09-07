@@ -199,26 +199,35 @@ present :: proc(r: ^Renderer) {
 // RenderApplication::HandleWindowResize: release the backbuffer views,
 // resize the swap chain buffers, and recreate the RTV, depth buffer, DSV,
 // and viewport at the new size. All references to the old backbuffer must be
-// released before ResizeBuffers.
-resize :: proc(r: ^Renderer, width, height: u32) {
+// released before ResizeBuffers. On failure, views are nil and dimensions retain
+// their last successful values. The caller must stop rendering and destroy r;
+// a clean demo exit is simpler than rebuilding a device/recovery framework.
+resize :: proc(r: ^Renderer, width, height: u32) -> (ok: bool) {
 	width := max(width, 1)
 	height := max(height, 1)
 
 	r.ctx->OMSetRenderTargets(0, nil, nil)
-	r.rtv->Release()
-	r.rtv = nil
-	r.dsv->Release()
-	r.dsv = nil
-	r.backbuffer->Release()
-	r.backbuffer = nil
+	release_views :: proc(r: ^Renderer) {
+		if r.rtv != nil {r.rtv->Release(); r.rtv = nil}
+		if r.dsv != nil {r.dsv->Release(); r.dsv = nil}
+		if r.backbuffer != nil {r.backbuffer->Release(); r.backbuffer = nil}
+	}
+	release_views(r)
+	defer if !ok {release_views(r)}
 
 	if r.swap_chain->ResizeBuffers(2, width, height, .R8G8B8A8_UNORM_SRGB, {}) < 0 {
 		fmt.eprintln("ResizeBuffers failed")
 		return
 	}
 
-	if r.swap_chain->GetBuffer(0, d3d11.ITexture2D_UUID, (^rawptr)(&r.backbuffer)) < 0 {return}
-	if r.device->CreateRenderTargetView((^d3d11.IResource)(r.backbuffer), nil, &r.rtv) < 0 {return}
+	if r.swap_chain->GetBuffer(0, d3d11.ITexture2D_UUID, (^rawptr)(&r.backbuffer)) < 0 {
+		fmt.eprintln("Resize GetBuffer failed")
+		return
+	}
+	if r.device->CreateRenderTargetView((^d3d11.IResource)(r.backbuffer), nil, &r.rtv) < 0 {
+		fmt.eprintln("Resize CreateRenderTargetView failed")
+		return
+	}
 
 	depth_desc := d3d11.TEXTURE2D_DESC {
 		Width      = width,
@@ -231,9 +240,15 @@ resize :: proc(r: ^Renderer, width, height: u32) {
 		BindFlags  = {.DEPTH_STENCIL},
 	}
 	depth_texture: ^d3d11.ITexture2D
-	if r.device->CreateTexture2D(&depth_desc, nil, &depth_texture) < 0 {return}
+	if r.device->CreateTexture2D(&depth_desc, nil, &depth_texture) < 0 {
+		fmt.eprintln("Resize CreateTexture2D failed")
+		return
+	}
 	defer depth_texture->Release()
-	if r.device->CreateDepthStencilView((^d3d11.IResource)(depth_texture), nil, &r.dsv) < 0 {return}
+	if r.device->CreateDepthStencilView((^d3d11.IResource)(depth_texture), nil, &r.dsv) < 0 {
+		fmt.eprintln("Resize CreateDepthStencilView failed")
+		return
+	}
 
 	r.ctx->OMSetRenderTargets(1, &r.rtv, r.dsv)
 	viewport := d3d11.VIEWPORT {
@@ -246,6 +261,7 @@ resize :: proc(r: ^Renderer, width, height: u32) {
 
 	r.width = width
 	r.height = height
+	return true
 }
 
 // Does the decoded PNG declare sRGB gamma — an sRGB chunk, or a gAMA chunk

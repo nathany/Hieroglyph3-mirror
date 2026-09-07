@@ -217,6 +217,9 @@ take that route.
    recovery is an optional extension. Do not continue drawing after failed resize
    leaves missing views. `Present` can report device removal or reset, which also
    needs an explicit decision rather than silently continuing.
+   The port's `renderer.resize` returns a `bool`; callers use
+   `if !renderer.resize(...) {return}` so existing `defer` cleanup runs before
+   any draw can use incomplete targets (KI-008 fixed).
 
 4. **Flags are bit_sets, not OR'd ints.** The vendor bindings turn C flag soup into
    Odin bit_sets and enums: `BindFlags = {.VERTEX_BUFFER}`, `Usage = .DYNAMIC`,

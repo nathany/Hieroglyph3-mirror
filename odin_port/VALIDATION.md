@@ -204,6 +204,30 @@ replay run with seven captures, exit 0, and no D3D messages. Rendered cones and
 the box remained consistent with the baseline; KI-003 was still unfixed here.
 Evidence: `p2-fixes/KI-004/` and `cone-probe-output.txt`.
 
+### KI-008
+
+After `b4554ca`, shared resize returns success only after all resources and
+dimensions are ready; every caller exits on failure. `just verify` passed all
+15 checks and eight math tests. All six callers ran normal resize/minimize/restore
+and their selected controls (53 captures total, all exit 0). Restored renders
+were inspected; only the previously recorded ParticleStorm and LightPrepass
+warnings appeared.
+
+Six isolated app copies retained an extra backbuffer reference and set a pending
+resize before their loops. Every copy exited 0 with `ResizeBuffers failed` and
+exactly the expected DXGI outstanding-reference error (#19); no later invalid
+rendering diagnostic occurred. A hidden probe of the actual shared helper covered
+successful resize plus failures at `ResizeBuffers`, `GetBuffer`, RTV creation,
+depth texture creation, and DSV creation. Probe-owned interface proxies forwarded
+real calls except the selected failure. Failed cases returned false, left all
+three view fields nil and dimensions unchanged, and stopped at the expected call.
+Live-object reports after teardown showed only retained diagnostic device references.
+
+`just asan immediate_renderer` passed; the executable rendered through resize
+and restore and exited 0 with empty stderr. An ASan build of the isolated forced-
+failure copy also exited 0 with only the expected resize diagnostic. Evidence:
+`p2-fixes/KI-008/`, `KI-008-failure/`, `KI-008-asan/`, and `resize-probe/`.
+
 ## Retained local evidence
 
 Artifacts are outside the repository under:

@@ -29,7 +29,7 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 | KI-020 | Particle startup UAV hazard | Confirmed port binding-cleanup omission | P3 | Unbind priming UAVs; preserve append counters |
 | KI-003 | Skin camera and resize | Confirmed port omission | P2 | Moderate local input/resize addition |
 | KI-004 | Cone apex normals | ✅ Fixed semantic translation defect | P2 | `normalize0`; preserves reference zero input |
-| KI-008 | Failed swap-chain resize | Confirmed port failure-path defect | P2 | Return failure and stop cleanly; recovery optional |
+| KI-008 | Failed swap-chain resize | ✅ Fixed port failure-path defect | P2 | Return failure and stop cleanly; recovery optional |
 | KI-005 | Water feature level/profiles | Confirmed compatibility departure | P3; P2 if FL10 is required | Restore profiles and feature level together |
 | KI-006 | Particle/water cameras | Confirmed port fidelity defect | P3 | Two translations and their explanations |
 | KI-011 | Skin anisotropy | Confirmed port fidelity defect | P3 | Set reference value 16 |
@@ -161,19 +161,27 @@ not establish that all inherited shader-side degenerate normals are solved.
 
 ### KI-008 — Failed swap-chain resize leaves invalid renderer state
 
-- [ ] Propagate resize failure to every caller and stop rendering safely.
+- [x] ✅ Propagate resize failure to every caller and stop rendering safely.
 
-[`renderer.resize`](odin_port/glyph/renderer/renderer.odin#L203) releases the RTV,
-DSV, and backbuffer before `ResizeBuffers`. Failure returns without views while
-callers keep rendering; another resize calls `Release` through missing pointers.
+[`renderer.resize`](odin_port/glyph/renderer/renderer.odin#L205) releases the RTV,
+DSV, and backbuffer before `ResizeBuffers`. Previously, failure returned without
+views while callers kept rendering; another resize could release missing pointers.
 Device removal, allocation failure, or an outstanding backbuffer reference can
 trigger this. Later view-recreation steps can fail independently.
 
 The [C++ path](Source/RendererDX11.cpp#L1048) attempts to reacquire the buffer even
 after a failed resize, although it is not a complete recovery model. The simplest
-Odin remedy is a status return, defined partial-state cleanup, and clean exit.
-Recovery of old-size resources is optional. Current callers are ImmediateRenderer,
+Odin remedy now returns a status, cleans partial views, and exits cleanly on
+failure. Dimensions are published only after success; callers must not render
+after false. Recovery of old-size resources is optional. Updated callers are ImmediateRenderer,
 ImageProcessor, ParticleStorm, WaterSimulation, DeferredRendering, and LightPrepass.
+
+Validation: `just verify` passed; all six normal resize/restore runs and six
+forced outstanding-reference failure exits passed. A hidden probe exercised
+success plus failures at all five COM operations, checking partial cleanup and
+live objects. ImmediateRenderer also passed normal and forced-failure ASan runs.
+Known ParticleStorm/LightPrepass diagnostics remained unchanged; no new API error
+occurred outside the deliberate failure probes.
 
 ### KI-005 — WaterSimulation requires a higher feature level than the reference
 
@@ -273,7 +281,7 @@ decoder or an ordinary-path failure.
 - [ ] Bound temporary allocation lifetimes after their last use.
 
 Screenshot callers use `fmt.tprintf`, and
-[`save_backbuffer_png`](odin_port/glyph/renderer/renderer.odin#L343) uses
+[`save_backbuffer_png`](odin_port/glyph/renderer/renderer.odin#L359) uses
 `fmt.ctprintf`. Several loops never reset `context.temp_allocator`.
 TessellationParams also allocates for repeated
 [title changes](odin_port/apps/tessellation_params/main.odin#L149), including

@@ -514,7 +514,9 @@ main :: proc() {
 		}
 
 		if state.pending_resize.x != 0 && state.pending_resize.y != 0 {
-			renderer.resize(&r, state.pending_resize.x, state.pending_resize.y)
+			if !renderer.resize(&r, state.pending_resize.x, state.pending_resize.y) {
+				return
+			}
 			depth_destroy(&depth)
 			resize_ok: bool
 			depth, resize_ok = depth_create(r.device, r.width, r.height)

@@ -441,7 +441,9 @@ main :: proc() {
 
 		// App state changes requested by the handler.
 		if state.pending_resize != {0, 0} {
-			renderer.resize(&r, state.pending_resize.x, state.pending_resize.y)
+			if !renderer.resize(&r, state.pending_resize.x, state.pending_resize.y) {
+				return
+			}
 			state.pending_resize = {0, 0}
 		}
 		if state.next_algorithm {

@@ -877,7 +877,9 @@ main :: proc() {
 			// Everything is torn down and rebuilt, so the C++'s special case
 			// (ViewLightPrepassRenderer::Resize hand-resizing the read-only
 			// depth target's SRV and DSV) has no counterpart here.
-			renderer.resize(&r, state.pending_resize.x, state.pending_resize.y)
+			if !renderer.resize(&r, state.pending_resize.x, state.pending_resize.y) {
+				return
+			}
 			targets_destroy(&targets)
 			resize_ok: bool
 			targets, resize_ok = targets_create(r.device, r.width, r.height)

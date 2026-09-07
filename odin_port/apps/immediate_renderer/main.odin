@@ -628,7 +628,9 @@ main :: proc() {
 		// RenderApplication::HandleWindowResize (also resets the projection
 		// via SetAspectRatio, dropping any 1/2/3 offset mode — as in C++).
 		if state.pending_resize != {0, 0} {
-			renderer.resize(&r, state.pending_resize.x, state.pending_resize.y)
+			if !renderer.resize(&r, state.pending_resize.x, state.pending_resize.y) {
+				return
+			}
 			state.pending_resize = {0, 0}
 			proj = dm.perspective_fov_lh(math.PI / 4, f32(r.width) / f32(r.height), 0.1, 1000.0)
 		}
