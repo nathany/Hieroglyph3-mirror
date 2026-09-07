@@ -93,6 +93,8 @@ main :: proc() {
 
 	msg: win32.MSG
 	for {
+		// Scratch strings and conversions are consumed within this frame.
+		defer free_all(context.temp_allocator)
 		for win32.PeekMessageW(&msg, nil, 0, 0, win32.PM_REMOVE) {
 			if msg.message == win32.WM_QUIT {
 				return

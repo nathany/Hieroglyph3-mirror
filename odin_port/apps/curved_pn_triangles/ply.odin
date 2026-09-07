@@ -58,7 +58,8 @@ ply_load :: proc(filename: string) -> (mesh: Ply_Mesh, ok: bool) {
 	// Header.
 	for in_header {
 		line := next_line(&text) or_return
-		fields := strings.fields(line, context.temp_allocator)
+		fields := strings.fields(line)
+		defer delete(fields)
 		switch {
 		case len(fields) >= 3 && fields[0] == "element" && fields[1] == "vertex":
 			vertex_count = strconv.parse_int(fields[2]) or_else 0
@@ -76,7 +77,8 @@ ply_load :: proc(filename: string) -> (mesh: Ply_Mesh, ok: bool) {
 	// Vertex lines: x y z nx ny nz.
 	for _ in 0 ..< vertex_count {
 		line := next_line(&text) or_return
-		fields := strings.fields(line, context.temp_allocator)
+		fields := strings.fields(line)
+		defer delete(fields)
 		if len(fields) < 6 {
 			fmt.eprintln(filename, "has a malformed vertex line")
 			return
@@ -94,7 +96,8 @@ ply_load :: proc(filename: string) -> (mesh: Ply_Mesh, ok: bool) {
 	// 3-control-point patches purely via the IA topology.
 	for _ in 0 ..< face_count {
 		line := next_line(&text) or_return
-		fields := strings.fields(line, context.temp_allocator)
+		fields := strings.fields(line)
+		defer delete(fields)
 		if len(fields) < 4 || (strconv.parse_int(fields[0]) or_else 0) != 3 {
 			fmt.eprintln(filename, "has a non-triangle face")
 			return

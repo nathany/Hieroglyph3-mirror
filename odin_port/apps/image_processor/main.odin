@@ -438,6 +438,7 @@ main :: proc() {
 	msg: win32.MSG
 	// GetMessage: > 0 = message, 0 = WM_QUIT, -1 = error.
 	for int(win32.GetMessageW(&msg, nil, 0, 0)) > 0 {
+		defer free_all(context.temp_allocator)
 		win32.TranslateMessage(&msg)
 		win32.DispatchMessageW(&msg)
 

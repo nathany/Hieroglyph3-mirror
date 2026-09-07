@@ -298,6 +298,10 @@ just check immediate_renderer and just asan immediate_renderer passed. An ASan h
 
 `just check water_simulation` passed. A hidden probe confirmed GetFeatureLevel == FL10_0, the optional compute/structured-buffer capability, successful SM4 shader compilation and actual scene creation without D3D warnings/errors. The real demo passed five debugger-backed startup/camera/resize/restore captures, exited normally and emitted no diagnostics; the wireframe water output was visually inspected. This establishes the FL10 device path on the installed AMD GPU, not compatibility with every historical FL10 adapter. Microsoft documents the optional capability and structured SRVs across shader stages in [Compute Shaders on Downlevel Hardware](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-downlevel-compute-shaders). Evidence: `p3-fixes/KI-005/`, `water-fl10-probe/`, and `water-fl10-probe-output.txt`.
 
+### KI-015
+
+`just verify` passed all 15 checks and eight tracked math tests. All ten changed demos passed debugger-backed startup runs with no diagnostics; CurvedPN and TessellationParams startup visuals were inspected. `just asan tessellation_params` and `just asan curved_pn_triangles` builds and standalone resize/restore runs passed. Isolated ASan copies wrapped the actual temp allocator with tracking and forced repeated screenshots (three frames per screenshot-capable demo, 32 screenshot/title-update frames for TessellationParams); ImageProcessor exercised three message iterations. Every subsequent iteration observed zero outstanding scratch bytes. A separate ASan/heap-tracking PLY probe loaded CPNTest three times: only its two mesh arrays remained after each load, and destruction left zero tracked heap bytes. Evidence: `p3-fixes/KI-015/`, `KI-015-asan/`, `scratch-probes/`, `ply-scratch-probe/`, and `ply-scratch-output.txt`.
+
 ## Retained local evidence
 
 Artifacts are outside the repository under:
