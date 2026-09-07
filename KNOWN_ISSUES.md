@@ -23,7 +23,7 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 
 | ID | Report | Classification | Priority | Minimum change / divergence |
 |---|---|---|---|---|
-| KI-001 | DXGI factory relationship | Confirmed port defect | P1 | Small ownership correction; restores reference |
+| KI-001 | DXGI factory relationship | Fixed port defect (2026-09-06) | P1 | Small ownership correction; restores reference |
 | KI-002 | Terrain complex LOD | Confirmed port omission | P2 | Moderate compute-prepass addition; restores lesson |
 | KI-019 | Terrain shaded-mode cbuffer slot | Confirmed port binding defect | P2 | Small per-variant binding correction; restores reference |
 | KI-020 | Particle startup UAV hazard | Confirmed port binding-cleanup omission | P3 | Unbind priming UAVs; preserve append counters |
@@ -57,17 +57,25 @@ table. Prefer explicit error, cleanup, and exit where recovery would obscure the
 
 ### KI-001 — Shared renderer uses an unrelated DXGI factory
 
-- [ ] Use the factory associated with the D3D device for swap-chain creation.
+- [x] Use the factory associated with the D3D device for swap-chain creation.
 
-[`renderer.create`](odin_port/glyph/renderer/renderer.odin#L123) creates a second
-factory unrelated to the one that enumerated the device's adapter. Mixing those
-DXGI objects is unsupported; rejection prevents every rendering sample from
-starting. No driver-specific rejection was reproduced during this audit.
+Before the fix, `renderer.create` created a second factory unrelated to the one
+that enumerated the device's adapter. Mixing those DXGI objects is unsupported;
+rejection would prevent every rendering sample from starting. No driver-specific
+rejection was reproduced during this audit.
 
-The [C++ implementation](Source/RendererDX11.cpp#L478) follows device -> DXGI
-adapter -> parent factory. Follow that chain and release temporary interfaces.
-The comment that a fresh factory is equivalent is incorrect. See
+The corrected [`renderer.create`](odin_port/glyph/renderer/renderer.odin#L119)
+follows device -> DXGI adapter -> parent factory, matching the
+[C++ implementation](Source/RendererDX11.cpp#L478). Each successful temporary
+interface acquisition has a deferred release. The misleading equivalence comment
+was replaced. See
 [Microsoft's DXGI guidance](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/dxgi-best-practices).
+
+Validation confirmed matching canonical factory identities for the actual device
+and swap chain, clean probe initialization/teardown diagnostics, all 15 compiler
+checks and eight math tests, 14 rendering demo runs, and two ASan executions.
+Known baseline diagnostics remain; see [the validation record](odin_port/VALIDATION.md).
+Partial-initialization cleanup remains separate work under KI-012.
 
 ### KI-002 — Complex interlocking-terrain LOD is nonfunctional
 
@@ -200,7 +208,7 @@ chain: KI-007 establishes that the reference PNG loader also creates one mip.
 
 - [ ] Establish consistent partial-result and local-resource cleanup.
 
-Representative paths include [renderer creation](odin_port/glyph/renderer/renderer.odin#L85)
+Representative paths include [renderer creation](odin_port/glyph/renderer/renderer.odin#L94)
 and [SkinAndBones setup](odin_port/apps/skin_and_bones/main.odin#L227). They acquire
 resources incrementally, while callers install destruction defers only after
 success. Later failure discards earlier owned objects. This repeats across scene
@@ -256,7 +264,7 @@ decoder or an ordinary-path failure.
 - [ ] Bound temporary allocation lifetimes after their last use.
 
 Screenshot callers use `fmt.tprintf`, and
-[`save_backbuffer_png`](odin_port/glyph/renderer/renderer.odin#L369) uses
+[`save_backbuffer_png`](odin_port/glyph/renderer/renderer.odin#L343) uses
 `fmt.ctprintf`. Several loops never reset `context.temp_allocator`.
 TessellationParams also allocates for repeated
 [title changes](odin_port/apps/tessellation_params/main.odin#L149), including
@@ -393,6 +401,8 @@ inherited failure behavior without changing filtering algorithms.
   [GeometryLoaderDX11.h](Include/GeometryLoaderDX11.h#L37)), producing three-point
   patches while the alternate hull shader expects six. Runtime captures show
   malformed/incomplete patches in both versions, not necessarily a blank image.
+  Native diagnostics report `DEVICE_DRAW_HULL_SHADER_INPUT_TOPOLOGY_MISMATCH`
+  (#2097222); the retained pre-KI-001 executable reproduces the same error.
   Repair needs adjacency generation and is a separate optional exercise.
 - **Deferred/LightPrepass camera wiring:** the C++ setup overrides create a camera
   ([Deferred](Applications/DeferredRendering/App.cpp#L74),
@@ -440,8 +450,9 @@ solely from the loader's advertised capabilities.
 
 ## Explanations to correct alongside later implementation
 
-The guide has been corrected in this documentation pass. Code and sample README
-edits remain pending review. In addition to explanations attached to issues above:
+The guide and sample README now describe the observed limitations and accepted
+departures. Matching code explanations remain work for the relevant implementation
+changes. In addition to explanations attached to issues above:
 
 - `skin_and_bones/cone.odin` describes `world * inv_bind`, although the correct
   implementation uses `inv_bind * world`. Its statement that compositions of
@@ -472,8 +483,9 @@ The earlier 2026-08-11 record reports the same suite and successful
 `just asan basic_application` / `just asan immediate_renderer` builds, without
 executing them. Those are historical results, not new sanitizer runs.
 
-Those source/documentation audits did not perform new graphical comparisons, application tracking-allocator
-runs, debug-layer validation, constrained-desktop tests, or failure injection.
+Those source/documentation audits did not perform new graphical comparisons,
+application tracking-allocator runs, debug-layer validation, constrained-desktop
+tests, or failure injection.
 Reported paths and repeated patterns were traced; this is not proof that every
 combination of sample controls and hardware behavior is defect-free.
 
@@ -483,5 +495,8 @@ minimize/restore. KI-002, KI-003, KI-006, and KI-013 were visible; KI-019 was ne
 confirmed. The reference executables were not rebuilt. Animated frames were not
 synchronized, and text omissions were treated as documented differences. A
 transient black C++ ImageProcessor restore capture did not persist on retest.
-That baseline requested the D3D debug layer but did not collect its messages;
-subsequent instrumentation results belong in [VALIDATION.md](odin_port/VALIDATION.md).
+That baseline requested the D3D debug layer but did not collect its messages.
+Subsequent probes verified the debug flag, interfaces, deliberate diagnostic,
+native message collection, and live-object reporting before KI-001 was changed.
+Those runs identified KI-020. KI-001 then passed the post-change checks described
+in [VALIDATION.md](odin_port/VALIDATION.md); the remaining issues were left unfixed.

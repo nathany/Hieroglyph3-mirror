@@ -117,10 +117,22 @@ create :: proc(
 		SwapEffect = .DISCARD,
 	}
 
-	// The C++ creates the swap chain from its adapter-enumeration factory;
-	// a fresh factory here is equivalent.
+	// Follow the device's DXGI adapter to its factory, as RendererDX11 does.
+	// A fresh factory is not interchangeable with the one that owns the adapter.
+	dxgi_device: ^dxgi.IDevice
+	if r.device->QueryInterface(dxgi.IDevice_UUID, (^rawptr)(&dxgi_device)) < 0 {
+		return
+	}
+	defer dxgi_device->Release()
+
+	adapter: ^dxgi.IAdapter
+	if dxgi_device->GetAdapter(&adapter) < 0 {
+		return
+	}
+	defer adapter->Release()
+
 	factory: ^dxgi.IFactory1
-	if dxgi.CreateDXGIFactory1(dxgi.IFactory1_UUID, (^rawptr)(&factory)) < 0 {
+	if adapter->GetParent(dxgi.IFactory1_UUID, (^rawptr)(&factory)) < 0 {
 		return
 	}
 	defer factory->Release()
