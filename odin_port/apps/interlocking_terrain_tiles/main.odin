@@ -43,7 +43,9 @@ Terrain_Vertex :: struct {
 // The shader's three cbuffers. Per-stage register assignment among used
 // cbuffers (declaration order main, patch, sampleparams): VS uses main only
 // (b0); the hull constant functions use patch + sampleparams (b0, b1); the
-// DS uses all three (b0, b1, b2); GS/PS use none.
+// DS always uses main (b0), plus sampleparams (b1) for simple shading or
+// patch (b1) for LOD debug. Unused cbuffers disappear in each variant.
+// GS/PS use none.
 Main_CB :: struct #align (16) {
 	world:           dm.Matrix4f32,
 	view_proj:       dm.Matrix4f32,
@@ -479,7 +481,14 @@ main :: proc() {
 		ctx->IASetPrimitiveTopology(._12_CONTROL_POINT_PATCHLIST)
 
 		hs_cbuffers := [2]^d3d11.IBuffer{scene.cb_patch, scene.cb_sample}
-		ds_cbuffers := [3]^d3d11.IBuffer{scene.cb_main, scene.cb_patch, scene.cb_sample}
+		ds_cbuffers := [2]^d3d11.IBuffer{scene.cb_main, nil}
+		switch shading {
+		case .Solid_Colour:
+		case .Simple_Shading:
+			ds_cbuffers[1] = scene.cb_sample
+		case .Lod_Debug_View:
+			ds_cbuffers[1] = scene.cb_patch
+		}
 		ctx->VSSetShader(scene.vertex_shader, nil, 0)
 		ctx->VSSetConstantBuffers(0, 1, &scene.cb_main)
 		ctx->HSSetShader(scene.hs_simple if simple_complexity else scene.hs_complex, nil, 0)
@@ -492,7 +501,7 @@ main :: proc() {
 		ctx->HSSetShaderResources(0, 1, &scene.height_srv)
 		ctx->HSSetSamplers(0, 1, &scene.sampler)
 		ctx->DSSetShader(scene.domain_shaders[shading], nil, 0)
-		ctx->DSSetConstantBuffers(0, 3, &ds_cbuffers[0])
+		ctx->DSSetConstantBuffers(0, 2, &ds_cbuffers[0])
 		ctx->DSSetShaderResources(0, 1, &scene.height_srv)
 		ctx->DSSetSamplers(0, 1, &scene.sampler)
 		ctx->GSSetShader(scene.geometry_shader, nil, 0)

@@ -1,4 +1,4 @@
-# Runtime baseline and KI-001 validation
+# Runtime baseline and issue-fix validation
 
 Recorded 2026-09-06 using Odin `dev-2026-09-nightly:a2fb372` on Windows.
 The original visual baseline used source revision `9a91a68`; the subsequent
@@ -165,6 +165,16 @@ repository's required checks, and preserve each fix's before/after evidence.
 | KI-007 | No defect fix; mip generation would change the reference output. |
 
 ## Retained local evidence
+
+### P2 follow-up: KI-019
+
+Starting from `1cfd19c`, terrain DS slot b1 now follows the compiled shading
+variant. `just check interlocking_terrain_tiles` passed. The retained debug build
+ran all three shading modes with both hull modes plus resize/minimize/restore:
+18 screen-client captures, exit 0, no D3D messages or debugger read errors.
+Gray shaded terrain and the colored simple-LOD view now render as intended;
+complex LOD remains a separate unfixed omission at this checkpoint. Evidence is
+in `p2-fixes/KI-019/` beside the earlier artifact directories below.
 
 Artifacts are outside the repository under:
 

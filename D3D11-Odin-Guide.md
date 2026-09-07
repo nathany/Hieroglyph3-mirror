@@ -289,7 +289,7 @@ take that route.
     (`fxc /dumpbin`, `D3DDisassemble`, or reflection via `D3DReflect`). Check every
     macro variant too: terrain's `SHADING_SIMPLE` domain shader puts `sampleparams`
     at `b1`, while `SHADING_DEBUG_LOD` puts `patch` there. Always binding the same
-    array supplies camera data as height-map dimensions in shaded mode (KI-019).
+    array supplied camera data as height-map dimensions in shaded mode (fixed KI-019).
     Small explicit per-variant bindings retain the book's shaders without rebuilding
     the engine's reflection system.
 
@@ -562,8 +562,8 @@ speed error from that difference.
 - **Ch. 9, Dynamic Tessellation:** advanced applications of ch. 4; implement here
   to explore adaptive geometry, or defer until your DX12 work. *(Reference ports: `curved_pn_triangles`,
   `interlocking_terrain_tiles`.)*
-  The current terrain port has separate complex-LOD and shaded-mode defects
-  (KI-002/KI-019); compare those modes with C++. Curved PN's adaptive mode has an
+  The current terrain port still omits the complex-LOD prepass (KI-002); its
+  shaded-mode binding defect (KI-019) is fixed. Curved PN's adaptive mode has an
   inherited adjacency mismatch and can produce malformed or incomplete patches
   in either implementation.
 - **Not book content at all** (engine/blog demos — ignore): BasicScripting (Lua),

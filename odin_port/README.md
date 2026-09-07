@@ -109,7 +109,7 @@ Where a demo shows live state (tessellation factors, active modes), it goes in t
 | `tessellation_params` | Applications/TessellationParams | 4 | `G` tri/quad domain · `P` partitioning mode · `E`/`I` select edge / inside factor · numpad `+`/`-` adjust it | ✅ state in the title bar |
 | `skin_and_bones` | Applications/SkinAndBones | 8 | `A` replay animation | Runs; camera/resize and cone issues remain |
 | `curved_pn_triangles` | Applications/CurvedPointNormalTriangles | 9 | `W` wireframe · `A` adaptive silhouette · numpad `+`/`-` tessellation factor (1–10) | Base mode runs; inherited adaptive defect |
-| `interlocking_terrain_tiles` | Applications/InterlockingTerrainTiles | 9 | `W` wireframe · `L` hull-shader complexity · `D` shading mode (solid / shaded / LOD debug) · `A` automated camera | Runs; KI-002/KI-019 affect alternate modes |
+| `interlocking_terrain_tiles` | Applications/InterlockingTerrainTiles | 9 | `W` wireframe · `L` hull-shader complexity · `D` shading mode (solid / shaded / LOD debug) · `A` automated camera | Runs; KI-002 affects complex LOD |
 | `light_prepass` | Applications/LightPrepass | 11 | camera; `N` cycles light mode | ✅ MSAA deferred lighting |
 | `deferred_rendering` | Applications/DeferredRendering | 11 | camera; `V` display · `N` light mode · `K` G-buffer opt · `O` light opt · `M` anti-aliasing | ✅ V/N/K/O/M toggles |
 | `water_simulation` | Applications/WaterSimulationI | 12 | camera | Simulation runs; camera/feature-level departures remain |
@@ -240,9 +240,10 @@ LOD, **D** cycles solid/N·L/LOD-debug domain shaders (three
 `compile_defines` variants), **A** freezes the auto-orbiting viewpoint.
 
 The port currently omits C++'s lookup compute prepass and hull-shader binding
-(KI-002), so complex LOD loses refinement. Independently, N·L shading binds the
-wrong domain-shader cbuffer (KI-019); `A`, `D`, `W` shows the dark shading even
-without `L`. The requested 640×480 size also differs from C++'s 1024×768 (KI-013).
+(KI-002), so complex LOD loses refinement. Domain-shader cbuffers are bound per
+compiled shading variant: `main` at b0, then `sampleparams` for N·L shading or
+`patch` for LOD debug at b1 (KI-019 fixed). The requested 640×480 size still
+differs from C++'s 1024×768 (KI-013).
 
 ### light_prepass
 

@@ -23,9 +23,9 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 
 | ID | Report | Classification | Priority | Minimum change / divergence |
 |---|---|---|---|---|
-| KI-001 | DXGI factory relationship | Fixed port defect (2026-09-06) | P1 | Small ownership correction; restores reference |
+| KI-001 | DXGI factory relationship | ✅ Fixed port defect (2026-09-06) | P1 | Small ownership correction; restores reference |
 | KI-002 | Terrain complex LOD | Confirmed port omission | P2 | Moderate compute-prepass addition; restores lesson |
-| KI-019 | Terrain shaded-mode cbuffer slot | Confirmed port binding defect | P2 | Small per-variant binding correction; restores reference |
+| KI-019 | Terrain shaded-mode cbuffer slot | ✅ Fixed port binding defect | P2 | Small per-variant binding correction; restores reference |
 | KI-020 | Particle startup UAV hazard | Confirmed port binding-cleanup omission | P3 | Unbind priming UAVs; preserve append counters |
 | KI-003 | Skin camera and resize | Confirmed port omission | P2 | Moderate local input/resize addition |
 | KI-004 | Cone apex normals | Confirmed semantic translation defect | P2 | `normalize0`; preserves reference zero input |
@@ -97,13 +97,12 @@ LOD debug view. This is independent of the shaded-mode binding problem below.
 
 ### KI-019 — Terrain shaded mode binds camera data as height-map dimensions
 
-- [ ] Bind the domain shader's second cbuffer according to its compiled variant.
+- [x] ✅ Bind the domain shader's second cbuffer according to its compiled variant.
 
-Freeze with `A`, select shaded mode with `D`, then solid rendering with `W`.
-Even without pressing `L`, Odin renders mostly black terrain while C++ produces
-smooth gray shading. The [port](odin_port/apps/interlocking_terrain_tiles/main.odin#L482)
-always binds `[cb_main, cb_patch, cb_sample]` at domain-shader slots `b0–b2`.
-Compilation/disassembly with the port's debug flags confirms:
+Before the fix, freezing with `A`, selecting shaded mode with `D`, then solid
+rendering with `W` produced mostly black terrain instead of C++'s smooth gray
+shading, even without `L`. The port always bound `[cb_main, cb_patch, cb_sample]`
+at domain-shader slots `b0–b2`. Compilation/disassembly with the debug flags confirmed:
 
 | Variant | Compiled cbuffers |
 |---|---|
@@ -111,13 +110,15 @@ Compilation/disassembly with the port's debug flags confirms:
 | `SHADING_SIMPLE` | `main → b0`, `sampleparams → b1` |
 | `SHADING_DEBUG_LOD` | `main → b0`, `patch → b1` |
 
-Shaded mode therefore reads camera position as height-map dimensions, corrupting
+Shaded mode therefore read camera position as height-map dimensions, corrupting
 the Sobel filter's sample offsets and resulting normals. C++
 [binds by reflected slot](Source/ShaderReflectionDX11.cpp#L229).
-Choose `cb_sample` or `cb_patch` at `b1` according to the variant; no shader edits
-or reflection framework are needed. Correct the comment claiming every DS uses
-all three buffers. Test all shading variants with both hull modes. An API-valid
-wrong buffer can evade debug-layer diagnostics; inspect actual shader bindings.
+The corrected bindings select `cb_sample` or `cb_patch` at `b1` according to the
+variant, and nil for solid color. No shader edits or reflection framework were
+needed. `just check interlocking_terrain_tiles` passed; all three shading variants
+under both hull modes ran with no D3D diagnostics (18 captures, normal exit).
+Gray shading and the colored simple-LOD view were visually verified. Complex LOD
+remains KI-002. An API-valid wrong buffer can evade debug-layer diagnostics.
 
 ### KI-003 — SkinAndBones omits camera and resize behavior
 
