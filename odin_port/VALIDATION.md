@@ -193,6 +193,17 @@ the probe's diagnostic device references. Informational destruction messages
 were allowed; no warnings other than that retained device were accepted.
 Evidence: `p2-fixes/KI-002/`, `KI-002-asan/`, and `terrain-probe-output.txt`.
 
+### KI-004
+
+After `f7b6689`, `normalize0` restores C++ zero-input semantics in the cone
+generator. `just check skin_and_bones` passed. An external copy of the actual
+generator with the demo's `(16, 20, 2, 40, 6)` parameters produced 322 finite
+normals: exactly 16 zero normals on the collapsed ring, all others unit length.
+The debug demo completed its animation, movement attempt, resize/restore, and
+replay run with seven captures, exit 0, and no D3D messages. Rendered cones and
+the box remained consistent with the baseline; KI-003 was still unfixed here.
+Evidence: `p2-fixes/KI-004/` and `cone-probe-output.txt`.
+
 ## Retained local evidence
 
 Artifacts are outside the repository under:

@@ -213,8 +213,9 @@ actors' node motion rides inside the skin matrices via the bind-pose-before-
 positioning call order; and the app's `LightColor` parameter is never read
 by any of these shaders.
 
+The cone's collapsed apex ring keeps zero CPU normals, matching C++ (KI-004 fixed).
 Current limitations: camera input and resize forwarding are missing (KI-003),
-cone-apex normalization produces NaNs (KI-004), and anisotropy differs (KI-011).
+and anisotropy differs (KI-011).
 The animation/replay path runs, but a wide resize stretches the fixed projection.
 
 ### curved_pn_triangles

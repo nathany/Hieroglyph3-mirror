@@ -285,10 +285,11 @@ generate_skinned_cone :: proc(
 			w0 := 1.0 - w1
 
 			// The cone's surface normal, tilted by the slope (the v=0 ring
-			// collapses onto the apex; its degenerate normal matches the C++).
+			// collapses onto the apex). Vector3f::Normalize leaves zero input
+			// zero; normalize0 preserves that behavior instead of producing NaNs.
 			n := [3]f32{x, 0, z}
 			n.y = math.atan(radius / height) * linalg.length(n)
-			n = linalg.normalize(n)
+			n = linalg.normalize0(n)
 
 			append(&vertices, Skinned_Vertex{
 				position = {x, y, z},

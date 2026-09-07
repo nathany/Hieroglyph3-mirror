@@ -28,7 +28,7 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 | KI-019 | Terrain shaded-mode cbuffer slot | ✅ Fixed port binding defect | P2 | Small per-variant binding correction; restores reference |
 | KI-020 | Particle startup UAV hazard | Confirmed port binding-cleanup omission | P3 | Unbind priming UAVs; preserve append counters |
 | KI-003 | Skin camera and resize | Confirmed port omission | P2 | Moderate local input/resize addition |
-| KI-004 | Cone apex normals | Confirmed semantic translation defect | P2 | `normalize0`; preserves reference zero input |
+| KI-004 | Cone apex normals | ✅ Fixed semantic translation defect | P2 | `normalize0`; preserves reference zero input |
 | KI-008 | Failed swap-chain resize | Confirmed port failure-path defect | P2 | Return failure and stop cleanly; recovery optional |
 | KI-005 | Water feature level/profiles | Confirmed compatibility departure | P3; P2 if FL10 is required | Restore profiles and feature level together |
 | KI-006 | Particle/water cameras | Confirmed port fidelity defect | P3 | Two translations and their explanations |
@@ -147,14 +147,17 @@ stretched fixed projection after a wide resize; animation and replay ran.
 
 ### KI-004 — SkinAndBones generates NaN normals at the cone apex
 
-- [ ] Preserve zero-vector normalization behavior.
+- [x] ✅ Preserve zero-vector normalization behavior.
 
 At [cone.odin](odin_port/apps/skin_and_bones/cone.odin#L291), ring `v == 0`
-deterministically supplies zero to `linalg.normalize`, producing NaNs. The C++
+deterministically supplied zero to `linalg.normalize`, producing NaNs. The C++
 generator supplies the same zero vector, but
-[`Vector3f::Normalize`](Source/Vector3f.cpp#L42) leaves it zero. Use
-`linalg.normalize0` or a zero guard. This preserves CPU geometry semantics;
-it does not establish that all inherited shader-side degenerate normals are solved.
+[`Vector3f::Normalize`](Source/Vector3f.cpp#L42) leaves it zero. The port now uses
+`linalg.normalize0`. A probe of the actual generator with the demo parameters
+verified all 322 normals finite, exactly 16 collapsed-ring zero normals, and
+unit length for the rest. The sample check and debug runtime animation/replay
+passed with no D3D diagnostics. This preserves CPU geometry semantics; it does
+not establish that all inherited shader-side degenerate normals are solved.
 
 ### KI-008 — Failed swap-chain resize leaves invalid renderer state
 
