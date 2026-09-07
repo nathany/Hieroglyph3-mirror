@@ -228,6 +228,31 @@ and restore and exited 0 with empty stderr. An ASan build of the isolated forced
 failure copy also exited 0 with only the expected resize diagnostic. Evidence:
 `p2-fixes/KI-008/`, `KI-008-failure/`, `KI-008-asan/`, and `resize-probe/`.
 
+### KI-003
+
+After `42af028`, SkinAndBones gained the existing small Odin camera pattern and
+checked resize/projection updates. `just check skin_and_bones` and
+`just asan skin_and_bones` passed. Ten debug captures covered startup, settled
+animation, forward movement, resize/restore, held/released A with replay, further
+movement, and right-drag. All rendered with normal exit 0 and no D3D diagnostics.
+The standalone ASan build also rendered through resize/restore and exited 0 with
+empty sanitizer stderr. A forced outstanding-reference resize in an isolated
+copy exited 0 with only the expected DXGI error and `ResizeBuffers failed`.
+
+A probe of the actual callback/camera code verified the original startup view,
+10 units/s movement, stationary position after key release, A replay without
+latched strafe, consumed right-drag deltas, and forwarded resize dimensions.
+Evidence: `p2-fixes/KI-003/`, `KI-003-asan/`, `KI-003-failure/`, and
+`skin-input-probe-output.txt`. KI-005's optional FL10 path and other P3 work
+remain outside this five-fix P2 sequence.
+
+The final `just verify` passed all 15 strict compiler checks and eight tracked
+math tests. Documentation checks passed for 75 local links/source-line bounds,
+balanced fences in seven files, 20 unique issue headings, and all five P2 rows
+marked fixed. `git diff --check` passed. `p2-fixes/summary.json` records hashes,
+diagnostics, and 106 screen-client captures across the ten debug demo runs in
+this sequence. The failure and ASan probes are additional, separately recorded runs.
+
 ## Retained local evidence
 
 Artifacts are outside the repository under:

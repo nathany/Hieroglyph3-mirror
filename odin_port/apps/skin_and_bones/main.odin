@@ -17,6 +17,8 @@
 // 0.25 rad/s about +Y). The bone swing animation eases (QuadraticInOut)
 // through keyframes over 6 seconds and then STOPS — press 'A' to replay,
 // exactly like the C++. Esc quits; Space saves SkinAndBones<n>.png.
+// W/S, A/D, Q/E move; Ctrl triples speed; right-drag rotates. A release
+// replays and clears strafe input, avoiding the C++'s consumed key-up latch.
 //
 // The skinning matrices carry the actors' full node transforms (the C++
 // captures bind pose before the app positions the nodes, and the skinned
@@ -28,7 +30,6 @@ package main
 
 import "core:fmt"
 import "core:math"
-import "core:math/linalg"
 import "core:time"
 import win32 "core:sys/windows"
 import d3d11 "vendor:directx/d3d11"
@@ -75,19 +76,39 @@ Axis_Transforms :: struct #align (16) {
 }
 
 App_State :: struct {
+	input:          Camera_Input,
 	save_screenshot: bool,
 	replay:          bool,
+	pending_resize: [2]u32,
+	last_mouse:     [2]i32,
+	mouse_valid:    bool,
 }
 
 message_callback :: proc(data: rawptr, hwnd: win32.HWND, msg: win32.UINT, wparam: win32.WPARAM, lparam: win32.LPARAM) -> win32.LRESULT {
 	state := cast(^App_State)data
+	set_camera_key :: proc(state: ^App_State, key: win32.WPARAM, down: bool) {
+		switch key {
+		case win32.WPARAM('W'): state.input.forward = down
+		case win32.WPARAM('S'): state.input.back = down
+		case win32.WPARAM('A'): state.input.left = down
+		case win32.WPARAM('D'): state.input.right = down
+		case win32.WPARAM('Q'): state.input.up = down
+		case win32.WPARAM('E'): state.input.down = down
+		case win32.WPARAM(win32.VK_CONTROL): state.input.speed_up = down
+		}
+	}
 
 	switch msg {
 	case win32.WM_DESTROY:
 		win32.PostQuitMessage(0)
 		return 0
 
+	case win32.WM_KEYDOWN:
+		set_camera_key(state, wparam, true)
+
 	case win32.WM_KEYUP:
+		// Clear first: the C++ consumes A's release for replay, latching strafe.
+		set_camera_key(state, wparam, false)
 		switch wparam {
 		case win32.WPARAM(win32.VK_ESCAPE):
 			win32.PostQuitMessage(0)
@@ -100,6 +121,20 @@ message_callback :: proc(data: rawptr, hwnd: win32.HWND, msg: win32.UINT, wparam
 			state.replay = true
 			return 0
 		}
+
+	case win32.WM_MOUSEMOVE:
+		x := i32(i16(lparam & 0xffff))
+		y := i32(i16((lparam >> 16) & 0xffff))
+		if wparam & 0x02 != 0 && state.mouse_valid { // MK_RBUTTON
+			state.input.mouse_dx += f32(x - state.last_mouse.x)
+			state.input.mouse_dy += f32(y - state.last_mouse.y)
+		}
+		state.last_mouse = {x, y}
+		state.mouse_valid = true
+	case win32.WM_RBUTTONDOWN, win32.WM_RBUTTONUP:
+		state.mouse_valid = false
+	case win32.WM_SIZE:
+		state.pending_resize = {u32(lparam & 0xffff), u32((lparam >> 16) & 0xffff)}
 	}
 
 	return win32.DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -410,11 +445,9 @@ main :: proc() {
 	bones_play_all(skinned_bones[:])
 
 	// RenderApplication camera: pitch 0.7 at (0,50,-20); proj pi/4,
-	// 0.1..1000. The camera is static in this sample.
-	cam_rotation := dm.matrix4_rotate_f32(f32(0.7), [3]f32{1, 0, 0})
-	view := dm.matrix4_translate_f32([3]f32{0, -50, 20}) * linalg.transpose(cam_rotation)
+	// 0.1..1000. Input follows the same small camera used by the other ports.
+	cam := Fp_Camera {position = {0, 50, -20}, pitch = 0.7}
 	proj := dm.perspective_fov_lh(math.PI / 4, f32(WIDTH) / f32(HEIGHT), 0.1, 1000.0)
-	view_proj := view * proj
 
 	ctx := r.ctx
 	start := time.tick_now()
@@ -436,6 +469,16 @@ main :: proc() {
 		dt := f32(time.duration_seconds(time.tick_diff(last_frame, now)))
 		last_frame = now
 		runtime_s := f32(time.duration_seconds(time.tick_diff(start, now)))
+
+		if state.pending_resize.x != 0 && state.pending_resize.y != 0 {
+			if !renderer.resize(&r, state.pending_resize.x, state.pending_resize.y) {
+				return
+			}
+			state.pending_resize = {}
+			proj = dm.perspective_fov_lh(math.PI / 4, f32(r.width) / f32(r.height), 0.1, 1000.0)
+		}
+		camera_update(&cam, &state.input, dt)
+		view_proj := camera_view_matrix(&cam) * proj
 
 		if state.replay {
 			state.replay = false

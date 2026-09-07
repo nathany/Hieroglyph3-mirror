@@ -8,6 +8,11 @@ but selected controls and visual comparisons exposed the defects below, includin
 KI-019. Successful startup is not a clean visual or API-validation result.
 See [validation records](odin_port/VALIDATION.md) for coverage and limitations.
 
+The five issues prioritized P2 for the current supported demos are now fixed:
+KI-019, KI-002, KI-004, KI-008, and KI-003. Each was verified and committed
+separately. KI-005 remains P3 under the current hardware scope; its conditional
+P2 priority applies if FL10 support is made a requirement. ✅ denotes a verified fix.
+
 The executable C++ applications, their helpers, and the dependency versions used
 here are the behavioral reference. An inherited problem is still real, but fixing
 it is an intentional improvement rather than a port correction. IDs remain stable
@@ -27,7 +32,7 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 | KI-002 | Terrain complex LOD | ✅ Fixed port omission | P2 | Moderate compute-prepass addition; restores lesson |
 | KI-019 | Terrain shaded-mode cbuffer slot | ✅ Fixed port binding defect | P2 | Small per-variant binding correction; restores reference |
 | KI-020 | Particle startup UAV hazard | Confirmed port binding-cleanup omission | P3 | Unbind priming UAVs; preserve append counters |
-| KI-003 | Skin camera and resize | Confirmed port omission | P2 | Moderate local input/resize addition |
+| KI-003 | Skin camera and resize | ✅ Fixed port omission | P2 | Moderate local input/resize addition |
 | KI-004 | Cone apex normals | ✅ Fixed semantic translation defect | P2 | `normalize0`; preserves reference zero input |
 | KI-008 | Failed swap-chain resize | ✅ Fixed port failure-path defect | P2 | Return failure and stop cleanly; recovery optional |
 | KI-005 | Water feature level/profiles | Confirmed compatibility departure | P3; P2 if FL10 is required | Restore profiles and feature level together |
@@ -127,23 +132,29 @@ remains KI-002. An API-valid wrong buffer can evade debug-layer diagnostics.
 
 ### KI-003 — SkinAndBones omits camera and resize behavior
 
-- [ ] Forward camera input and recreate size-dependent state on `WM_SIZE`.
+- [x] ✅ Forward camera input and recreate size-dependent state on `WM_SIZE`.
 
-The [callback](odin_port/apps/skin_and_bones/main.odin#L82) handles quit, screenshots,
-and replay, while [fixed matrices](odin_port/apps/skin_and_bones/main.odin#L415)
-leave the camera and 800x600 projection unchanged after input or resizing.
+The old callback handled only quit, screenshots, and replay; fixed matrices left
+the camera and 800x600 projection unchanged after input or resizing. The updated
+[callback](odin_port/apps/skin_and_bones/main.odin#L87) forwards camera keys,
+right-drag deltas, and pending dimensions. The frame loop now updates the camera
+and projection, using KI-008's checked resize result before drawing.
 
 The [C++ event handler](Applications/SkinAndBones/App.cpp#L224) delegates to
 [`RenderApplication`](Source/RenderApplication.cpp#L183), which forwards camera
-events and resizes the swap chain, views, and aspect ratio. Reuse the existing
-plain Odin camera and pending-resize pattern.
+events and resizes the swap chain, views, and aspect ratio. The port reuses the
+existing small Odin camera and pending-resize pattern, preserving startup pose.
 
-Preserve `A` replay while clearing camera state on release. C++ forwards `A`
+`A` replay is preserved while clearing camera state on release. C++ forwards `A`
 key-down but consumes key-up for replay, which can latch left movement.
 Avoiding that inherited input conflict is a small documented improvement.
 
-The runtime baseline confirmed missing forward movement before replay and a
-stretched fixed projection after a wide resize; animation and replay ran.
+Validation: sample check/ASan build and run passed; ten debug captures covered
+movement before/after replay, held/released `A`, right-drag, resize and restore,
+with no D3D diagnostics. A numerical callback/camera probe verified startup view,
+speed, release state, mouse deltas and resize forwarding. A forced resize failure
+exited cleanly. Total-pitch clamping and accumulated mouse deltas retain the other
+Odin samples' documented usability departures.
 
 ### KI-004 — SkinAndBones generates NaN normals at the cone apex
 
@@ -216,7 +227,7 @@ framing from C++. The difference was not attributed to the compiler update.
 
 - [ ] Set the cone material's `MaxAnisotropy` to 16.
 
-The [Odin sampler](odin_port/apps/skin_and_bones/main.odin#L319) selects anisotropic
+The [Odin sampler](odin_port/apps/skin_and_bones/main.odin#L354) selects anisotropic
 filtering with maximum 1; the [C++ material](Source/GeometryGeneratorDX11.cpp#L936)
 uses 16. This tiny correction restores the setting. It does not require a mip
 chain: KI-007 establishes that the reference PNG loader also creates one mip.
@@ -226,7 +237,7 @@ chain: KI-007 establishes that the reference PNG loader also creates one mip.
 - [ ] Establish consistent partial-result and local-resource cleanup.
 
 Representative paths include [renderer creation](odin_port/glyph/renderer/renderer.odin#L94)
-and [SkinAndBones setup](odin_port/apps/skin_and_bones/main.odin#L227). They acquire
+and [SkinAndBones setup](odin_port/apps/skin_and_bones/main.odin#L262). They acquire
 resources incrementally, while callers install destruction defers only after
 success. Later failure discards earlier owned objects. This repeats across scene
 and pipeline construction.
@@ -253,7 +264,7 @@ rather than a new abstraction framework.
 
 - [ ] Restore the reference's 1024x768 requested client size.
 
-The [port](odin_port/apps/interlocking_terrain_tiles/main.odin#L33) requests 640x480;
+The [port](odin_port/apps/interlocking_terrain_tiles/main.odin#L31) requests 640x480;
 [C++](Applications/InterlockingTerrainTiles/App.cpp#L52) requests 1024x768. Both
 are 4:3, but lower resolution changes visible terrain detail. This differs from
 respecting the actual size Windows creates (KI-018).
@@ -310,7 +321,7 @@ a general checked-arithmetic framework is unnecessary here.
 - [ ] Check creation and release the optional staging buffer.
 
 With `-define:DEBUG_COUNTS=true`, the
-[debug block](odin_port/apps/particle_storm/main.odin#L640) creates a static staging
+[debug block](odin_port/apps/particle_storm/main.odin#L641) creates a static staging
 buffer and never releases it. This is one retained allocation, not per-frame
 growth. Failed creation can also send nil to `CopyStructureCount` and `Map`.
 The [C++ equivalent](Applications/ParticleStorm/ViewSimulation.cpp#L195) registers
@@ -349,9 +360,9 @@ No constrained-desktop runtime reproduction was performed during this audit.
 
 - [ ] Explicitly unbind the priming UAVs before the next pass.
 
-The first-frame [priming dispatch](odin_port/apps/particle_storm/main.odin#L575)
+The first-frame [priming dispatch](odin_port/apps/particle_storm/main.odin#L577)
 leaves `next` at `u0` and `current` at `u1`. When the first insertion runs that
-frame, [binding only `u0`](odin_port/apps/particle_storm/main.odin#L596) attempts to
+frame, [binding only `u0`](odin_port/apps/particle_storm/main.odin#L598) attempts to
 bind `current` in both slots. The debug layer reports
 `DEVICE_CSSETUNORDEREDACCESSVIEWS_HAZARD` and automatically clears `u1`.
 Both messages were captured before KI-001; no particle loss was demonstrated.
@@ -387,7 +398,7 @@ and `dirty` must reflect only a complete successful commit.
 
 - [ ] Optionally handle replacement failure without continuing with invalid targets.
 
-Pressing `I` [destroys the pair](odin_port/apps/image_processor/main.odin#L458)
+Pressing `I` [destroys the pair](odin_port/apps/image_processor/main.odin#L460)
 before creating replacements and ignores success. Partial results remain stored
 and can be released on the next switch or exit; they are not orphaned
 replacement-time leaks. The distinct startup leak is KI-012.
@@ -431,7 +442,7 @@ inherited failure behavior without changing filtering algorithms.
   Preserve Odin's useful camera behavior and document the departure. Both camera
   implementations use 10 units/second; reducing Odin's speed is not a remedy.
 - **LightPrepass mask warning:** the
-  [depth/stencil-only pass](odin_port/apps/light_prepass/main.odin#L973) uses
+  [depth/stencil-only pass](odin_port/apps/light_prepass/main.odin#L975) uses
   `MaskLP`, whose pixel shader declares `SV_Target0` although its color write is
   intentionally discarded. The debug layer reports
   `DEVICE_DRAW_RENDERTARGETVIEW_NOT_SET`; C++

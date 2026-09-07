@@ -107,7 +107,7 @@ Where a demo shows live state (tessellation factors, active modes), it goes in t
 | `immediate_renderer` | Applications/ImmediateRenderer | 3 | camera; `1`/`2`/`3` off-center projection (symmetric / right / left) | ✅ core visual scope |
 | `image_processor` | Applications/ImageProcessor | 10 | `N` next filter · `I` next image · `Space` cycles sampler · left-drag pan · right-drag / wheel zoom | ✅ all 5 filters/images/samplers |
 | `tessellation_params` | Applications/TessellationParams | 4 | `G` tri/quad domain · `P` partitioning mode · `E`/`I` select edge / inside factor · numpad `+`/`-` adjust it | ✅ state in the title bar |
-| `skin_and_bones` | Applications/SkinAndBones | 8 | `A` replay animation | Runs; camera/resize and cone issues remain |
+| `skin_and_bones` | Applications/SkinAndBones | 8 | `WASDQE` move · Ctrl speed · right-drag look · `A` release replays | Animation, camera and resize verified |
 | `curved_pn_triangles` | Applications/CurvedPointNormalTriangles | 9 | `W` wireframe · `A` adaptive silhouette · numpad `+`/`-` tessellation factor (1–10) | Base mode runs; inherited adaptive defect |
 | `interlocking_terrain_tiles` | Applications/InterlockingTerrainTiles | 9 | `W` wireframe · `L` hull-shader complexity · `D` shading mode (solid / shaded / LOD debug) · `A` automated camera | Simple/complex LOD and shading verified |
 | `light_prepass` | Applications/LightPrepass | 11 | camera; `N` cycles light mode | ✅ MSAA deferred lighting |
@@ -214,9 +214,12 @@ positioning call order; and the app's `LightColor` parameter is never read
 by any of these shaders.
 
 The cone's collapsed apex ring keeps zero CPU normals, matching C++ (KI-004 fixed).
-Current limitations: camera input and resize forwarding are missing (KI-003),
-and anisotropy differs (KI-011).
-The animation/replay path runs, but a wide resize stretches the fixed projection.
+Camera keys are **W/S** forward/back, **A/D** strafe, **Q/E** up/down, **Ctrl**
+for triple speed, and right-drag to look. Releasing **A** both stops strafing and
+replays the animation; this avoids C++ consuming that release and latching left
+movement. Resize recreates the backbuffer/depth views and projection, and failure
+exits cleanly (KI-003 fixed). The camera follows the other Odin samples' accumulated
+mouse deltas and total-pitch clamp. Anisotropy still differs from C++ (KI-011).
 
 ### curved_pn_triangles
 
