@@ -94,9 +94,12 @@ create :: proc(
 	width, height: u32,
 	feature_level: d3d11.FEATURE_LEVEL,
 ) -> (
-	r: Renderer,
+	result: Renderer,
 	ok: bool,
 ) {
+	// Return an empty result on failure: return values are copied before defers.
+	r: Renderer
+	defer if !ok {destroy(&r)}
 	r.width = width
 	r.height = height
 
@@ -188,6 +191,7 @@ destroy :: proc(r: ^Renderer) {
 	if r.swap_chain != nil {r.swap_chain->Release(); r.swap_chain = nil}
 	if r.ctx != nil {r.ctx->Release(); r.ctx = nil}
 	if r.device != nil {r.device->Release(); r.device = nil}
+	r^ = {}
 }
 
 // Mirrors RendererDX11::Present's defaults: no vsync, no flags.

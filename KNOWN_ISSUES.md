@@ -246,6 +246,8 @@ chain: KI-007 establishes that the reference PNG loader also creates one mip.
 
 ### KI-012 — Failed initialization leaks owned resources
 
+- [x] ✅ Shared renderer construction cleans all acquired resources and returns an empty failure result. Sample ownership remains in progress.
+
 - [ ] Establish consistent partial-result and local-resource cleanup.
 
 Representative paths include [renderer creation](odin_port/glyph/renderer/renderer.odin#L94)

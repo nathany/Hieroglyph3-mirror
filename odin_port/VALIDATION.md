@@ -306,6 +306,10 @@ just check immediate_renderer and just asan immediate_renderer passed. An ASan h
 
 `just verify` passed all 15 strict checks and eight tracked math tests. All 14 rendering demos passed normal debugger-backed startup runs. A separate copied glyph/window collection constrained only creation to 480x270 while leaving sample WIDTH/HEIGHT constants intact; all 14 passed assertions on actual client, backbuffer, depth and viewport sizes and rendered normally. Extra assertions covered LightPrepass targets, all Deferred targets including 960x540 SSAA, Water/Particle depth and image-sized filter targets. This is a controlled constrained-creation simulation, not a natural desktop-limit reproduction. Physical captures were 720x405 at 150% scaling. The three changed-aspect startup views were inspected. Both sets exited normally; only LightPrepass's retained mask warning appeared. Evidence: `p3-fixes/KI-018/`, `constrained-probes/`, `KI-018-constrained-build/`, and `KI-018-constrained/`.
 
+### KI-012 — shared renderer boundary
+
+`just verify` passed. All 14 demos passed debugger-backed startup runs (only the retained LightPrepass mask warning); `just asan basic_application` and standalone resize/restore passed. An ASan probe exercised success, nine synthetic early returns after successive acquisitions, and a real CreateSwapChain failure with a null HWND. Every failure returned an empty renderer before caller destruction; live-object reports showed only the intentionally retained diagnostic device. The probe caught Odin's return-before-defer copy behavior, prompting a separate local construction value; `just verify` passed again after that correction. Evidence: `p3-fixes/KI-012-renderer/`, `KI-012-renderer-asan/`, `renderer-ownership-probe/`, and `renderer-ownership-output.txt`.
+
 ## Retained local evidence
 
 Artifacts are outside the repository under:
