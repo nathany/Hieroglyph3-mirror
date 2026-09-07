@@ -45,7 +45,7 @@ and API evidence do not imply a failure was reproduced on the local GPU.
 | KI-016 | MS3D count reads | ✅ Fixed input-hardening issue | P3 | Two explicit bounds checks |
 | KI-017 | Particle debug-count buffer | ✅ Fixed optional-path ownership defect | P3 | Check creation and release the buffer |
 | KI-018 | Actual startup dimensions | Confirmed port fidelity defect | P3 | Use actual client/backbuffer dimensions |
-| KI-009 | Immediate mesh replacement | Real inherited weakness | P3 | Clean failure exit; rollback/retry optional |
+| KI-009 | Immediate mesh replacement | ✅ Fixed inherited weakness | P3 | Clean failure exit; rollback/retry optional |
 | KI-010 | ImageProcessor replacement | Real inherited weakness | P3 | Clean failure exit or complete temporary target pair |
 | KI-007 | Claimed missing mip chain | Disproved as a port regression | None | Mips would be an optional quality enhancement |
 
@@ -405,7 +405,11 @@ simulation algorithm. Other compute samples already unbind after their dispatche
 
 ### KI-009 — Immediate mesh replacement failures suppress retries
 
-- [ ] Optionally make allocation/upload failure explicit and terminate cleanly.
+- [x] ✅ Optionally make allocation/upload failure explicit and terminate cleanly.
+
+**Verified fix:** Mesh uploads return success, check buffer-size narrowing, install each replacement only after allocation succeeds, and retain dirty state on failure. ImmediateRenderer reports failure and exits before drawing a partially uploaded pair. This deliberately improves the inherited unchecked failure behavior without adding retry or rollback machinery.
+
+Original finding (before the fix):
 
 [`mesh_commit`](odin_port/apps/immediate_renderer/mesh.odin#L113) releases old
 buffers before replacement succeeds, advances capacity even on failure, and

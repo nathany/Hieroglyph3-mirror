@@ -286,6 +286,10 @@ just check immediate_renderer and just asan immediate_renderer passed. An ASan h
 
 `just verify` passed all 15 strict checks and eight tracked math tests; `just asan basic_tessellation` and its standalone startup/resize/restore run passed. An ASan probe importing the actual MS3D loader rejected six missing/partial vertex or triangle count fixtures and loaded hedra, box, and Sample_Scene. Debugger-backed startup runs of BasicTessellation, SkinAndBones, DeferredRendering, and LightPrepass exited normally; the only diagnostic was LightPrepass's retained mask-pass warning. All four startup captures were inspected. Evidence: `p3-fixes/ms3d-probe/`, `ms3d-probe-output.txt`, `KI-016/`, and `KI-016-asan/`.
 
+### KI-009
+
+`just check immediate_renderer` and `just asan immediate_renderer` passed. The demo passed eight debugger-backed startup/control/resize captures and a standalone ASan startup/resize/restore run, with normal exits and no diagnostics. An ASan probe using an unchanged copy of mesh.odin and private COM forwarding proxies exercised successful growth and failures in vertex creation, index creation, vertex Map, and index Map; dirty/capacity state, balanced Unmap calls, and cleanup passed, with no D3D warnings/errors. Startup geometry was visually inspected. Evidence: `p3-fixes/KI-009/`, `KI-009-asan/`, `mesh-probe/`, and `mesh-probe-output.txt`.
+
 ## Retained local evidence
 
 Artifacts are outside the repository under:

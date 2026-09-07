@@ -668,10 +668,14 @@ main :: proc() {
 		// All Map calls happen before any draw is issued this frame. Only the
 		// grid is actually dirty after the first frame; the other three
 		// commits fall straight through and keep their buffers.
-		mesh_commit(&grid.mesh, r.device, ctx)
-		mesh_commit(&shapes.mesh, r.device, ctx)
-		mesh_commit(&stl_object.mesh, r.device, ctx)
-		mesh_commit(&curve.mesh, r.device, ctx)
+		// Unlike the reference's unchecked upload, a failure ends the demo
+		// before drawing a partially updated vertex/index pair.
+		for mesh in ([]^Immediate_Mesh{&grid.mesh, &shapes.mesh, &stl_object.mesh, &curve.mesh}) {
+			if !mesh_commit(mesh, r.device, ctx) {
+				fmt.eprintln("Failed to upload immediate geometry")
+				return
+			}
+		}
 
 		// ViewPerspective: clear to the App's color, depth to 1.
 		clear_color := [4]f32{0.2, 0.2, 0.4, 0.0}

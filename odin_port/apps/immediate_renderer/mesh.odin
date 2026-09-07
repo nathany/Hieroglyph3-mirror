@@ -93,31 +93,37 @@ create_dynamic_buffer :: proc(device: ^d3d11.IDevice, byte_width: u32, bind: d3d
 		CPUAccessFlags = {.WRITE},
 	}
 	buffer: ^d3d11.IBuffer
-	device->CreateBuffer(&desc, nil, &buffer)
+	if device->CreateBuffer(&desc, nil, &buffer) < 0 {return nil}
 	return buffer
 }
 
 // Upload to the GPU if anything changed, growing the DYNAMIC buffers when
 // the data outgrows them.
-mesh_commit :: proc(m: ^Immediate_Mesh, device: ^d3d11.IDevice, ctx: ^d3d11.IDeviceContext) {
+mesh_commit :: proc(m: ^Immediate_Mesh, device: ^d3d11.IDevice, ctx: ^d3d11.IDeviceContext) -> bool {
 	// Static meshes go dirty once, on construction, and never map again — the
 	// per-frame Map cost is paid only by the grid.
 	if !m.dirty || len(m.vertices) == 0 {
 		m.dirty = false
-		return
+		return true
 	}
 
 	// Capacity only grows: a smaller rebuild reuses the existing buffer and
 	// just leaves the tail bytes stale, which is fine because the draw call
 	// is bounded by len(m.indices), not by the buffer size.
 	if len(m.vertices) > m.vertex_capacity {
+		if u64(len(m.vertices)) > u64(max(u32)) / size_of(Basic_Vertex) {return false}
+		buffer := create_dynamic_buffer(device, u32(len(m.vertices) * size_of(Basic_Vertex)), {.VERTEX_BUFFER})
+		if buffer == nil {return false}
 		if m.vertex_buffer != nil {m.vertex_buffer->Release()}
-		m.vertex_buffer = create_dynamic_buffer(device, u32(len(m.vertices) * size_of(Basic_Vertex)), {.VERTEX_BUFFER})
+		m.vertex_buffer = buffer
 		m.vertex_capacity = len(m.vertices)
 	}
 	if len(m.indices) > m.index_capacity {
+		if u64(len(m.indices)) > u64(max(u32)) / size_of(u32) {return false}
+		buffer := create_dynamic_buffer(device, u32(len(m.indices) * size_of(u32)), {.INDEX_BUFFER})
+		if buffer == nil {return false}
 		if m.index_buffer != nil {m.index_buffer->Release()}
-		m.index_buffer = create_dynamic_buffer(device, u32(len(m.indices) * size_of(u32)), {.INDEX_BUFFER})
+		m.index_buffer = buffer
 		m.index_capacity = len(m.indices)
 	}
 
@@ -125,16 +131,17 @@ mesh_commit :: proc(m: ^Immediate_Mesh, device: ^d3d11.IDevice, ctx: ^d3d11.IDev
 	// replaced, so let the driver rename the buffer instead of waiting for
 	// the GPU to finish reading last frame's copy.
 	mapped: d3d11.MAPPED_SUBRESOURCE
-	if m.vertex_buffer != nil && ctx->Map((^d3d11.IResource)(m.vertex_buffer), 0, .WRITE_DISCARD, {}, &mapped) >= 0 {
-		copy(([^]Basic_Vertex)(mapped.pData)[:len(m.vertices)], m.vertices[:])
-		ctx->Unmap((^d3d11.IResource)(m.vertex_buffer), 0)
-	}
-	if m.index_buffer != nil && ctx->Map((^d3d11.IResource)(m.index_buffer), 0, .WRITE_DISCARD, {}, &mapped) >= 0 {
+	if ctx->Map((^d3d11.IResource)(m.vertex_buffer), 0, .WRITE_DISCARD, {}, &mapped) < 0 {return false}
+	copy(([^]Basic_Vertex)(mapped.pData)[:len(m.vertices)], m.vertices[:])
+	ctx->Unmap((^d3d11.IResource)(m.vertex_buffer), 0)
+	if len(m.indices) > 0 {
+		if ctx->Map((^d3d11.IResource)(m.index_buffer), 0, .WRITE_DISCARD, {}, &mapped) < 0 {return false}
 		copy(([^]u32)(mapped.pData)[:len(m.indices)], m.indices[:])
 		ctx->Unmap((^d3d11.IResource)(m.index_buffer), 0)
 	}
 
 	m.dirty = false
+	return true
 }
 
 // --- Shape builders, ported from GeometryActor ------------------------------
